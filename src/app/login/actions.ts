@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
-const PROVIDERS = ["google", "kakao"] as const;
+// 지금은 카카오 로그인만 쓴다 (구글은 설정하지 않음)
+const PROVIDERS = ["kakao"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 function isProvider(value: unknown): value is Provider {

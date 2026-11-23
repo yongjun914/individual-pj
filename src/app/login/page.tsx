@@ -29,7 +29,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
       </Suspense>
 
       <p className="text-center text-xs text-zinc-500">
-        로그인하면 학생회 회계 기록을 위해 이름과 이메일을 저장합니다.
+        로그인하면 학생회 회계 기록을 위해 카카오 닉네임(과 동의한 경우 이메일)을 저장합니다.
       </p>
     </main>
   );
@@ -64,14 +64,6 @@ function LoginButtons({ next }: { next: string }) {
         className="bg-[#FEE500] text-[#191919] hover:brightness-95"
       >
         카카오로 시작하기
-      </SubmitButton>
-      <SubmitButton
-        name="provider"
-        value="google"
-        pendingText="구글로 이동 중…"
-        className="border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-      >
-        구글로 시작하기
       </SubmitButton>
     </form>
   );
