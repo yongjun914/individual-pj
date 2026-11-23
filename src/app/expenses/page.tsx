@@ -133,6 +133,12 @@ async function ExpensesContent({ searchParams }: { searchParams: PageProps<"/exp
       >
         + 지출 등록
       </Link>
+      <Link
+        href="/expenses/import"
+        className="-mt-3 text-center text-sm text-zinc-500 underline-offset-4 hover:underline"
+      >
+        통장·카드 거래내역 파일로 한꺼번에 가져오기
+      </Link>
     </>
   );
 }

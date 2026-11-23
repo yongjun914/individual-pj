@@ -1,0 +1,322 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+
+import { PAYMENT_METHOD_LABELS } from "@/lib/expenses";
+import { formatShortDate, formatWon } from "@/lib/format";
+import { parseWorkbookSheets, type Cell, type StatementRow } from "@/lib/statement-import";
+
+import { findDuplicates, importExpenses, type DuplicateMatch } from "./actions";
+
+type TermOption = { id: string; label: string };
+
+/** 올릴 수 있는 파일 최대 크기 */
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+const selectClass =
+  "h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-900";
+
+type Preview = {
+  fileName: string;
+  sheetName: string;
+  format: "bank" | "card";
+  rows: StatementRow[];
+  duplicates: Map<number, DuplicateMatch>;
+};
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** 엑셀 셀의 Date를 해석기가 읽는 글자로 바꾼다 (브라우저 시간대 = 한국 시간 기준) */
+function toCell(value: unknown): Cell {
+  if (value instanceof Date) {
+    // 엑셀 날짜는 소수라 14:05가 14:04:59.999로 읽히기도 한다 → 분 단위로 반올림
+    const d = new Date(Math.round(value.getTime() / 60_000) * 60_000);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  return null;
+}
+
+/** 글자 파일(CSV, HTML로 된 .xls)을 읽는다. UTF-8이 아니면 한국 은행에서 흔한 EUC-KR로 읽는다. */
+function decodeText(bytes: Uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("euc-kr").decode(bytes);
+  }
+}
+
+/** 엑셀 원본 형식인지 (xlsx는 PK로, 옛 xls는 D0 CF로 시작) */
+function isBinaryWorkbook(bytes: Uint8Array) {
+  return (bytes[0] === 0x50 && bytes[1] === 0x4b) || (bytes[0] === 0xd0 && bytes[1] === 0xcf);
+}
+
+async function readSheets(file: File) {
+  const XLSX = await import("xlsx");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const workbook = isBinaryWorkbook(bytes)
+    ? XLSX.read(bytes, { type: "array", cellDates: true, dense: true })
+    : XLSX.read(decodeText(bytes).replace(/^﻿/, ""), { type: "string", cellDates: true, dense: true });
+  return workbook.SheetNames.map((name) => {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[name], { header: 1, raw: true, defval: null });
+    return { name, rows: rows.map((row) => row.map(toCell)) };
+  });
+}
+
+export function ImportFlow({ terms }: { terms: TermOption[] }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [termId, setTermId] = useState(terms[0]?.id ?? "");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [done, setDone] = useState<number | null>(null);
+
+  function analyze(file: File, forTerm: string) {
+    setError(null);
+    setDone(null);
+    setPreview(null);
+    if (file.size > MAX_FILE_SIZE) {
+      setError("파일이 너무 커요(5MB까지). 조회 기간을 나눠서 받아 주세요.");
+      return;
+    }
+
+    startTransition(async () => {
+      setStatus("파일을 읽는 중…");
+      let sheets;
+      try {
+        sheets = await readSheets(file);
+      } catch (e) {
+        console.error(e);
+        setStatus(null);
+        setError(
+          /password|encrypt/i.test(String(e))
+            ? "암호가 걸린 파일이에요. 엑셀에서 암호를 풀고 다시 저장한 뒤 올려 주세요."
+            : "파일을 읽지 못했어요. 엑셀(.xlsx, .xls)이나 CSV 파일인지 확인해 주세요.",
+        );
+        return;
+      }
+
+      const parsed = parseWorkbookSheets(sheets);
+      if (!parsed.ok) {
+        setStatus(null);
+        setError(parsed.error);
+        return;
+      }
+
+      const expenses = parsed.rows.filter((r) => r.kind === "expense" && r.spentOn && r.amount);
+      setStatus("이미 등록된 지출과 비교하는 중…");
+      const matches = await findDuplicates(
+        forTerm,
+        expenses.map((r) => ({ key: String(r.line), spentOn: r.spentOn!, amount: r.amount! })),
+      );
+      const duplicates = new Map(matches.map((m) => [Number(m.key), m]));
+
+      setPreview({ fileName: file.name, sheetName: parsed.sheetName, format: parsed.format, rows: parsed.rows, duplicates });
+      setSelected(new Set(expenses.filter((r) => !r.cancelledInFile && !duplicates.has(r.line)).map((r) => r.line)));
+      setStatus(null);
+    });
+  }
+
+  function toggle(line: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(line)) next.delete(line);
+      else next.add(line);
+      return next;
+    });
+  }
+
+  function submit() {
+    if (!preview) return;
+    const rows = preview.rows
+      .filter((r) => selected.has(r.line) && r.kind === "expense")
+      .map((r) => ({ spentOn: r.spentOn!, merchant: r.merchant, amount: r.amount!, method: r.method }));
+    setError(null);
+    startTransition(async () => {
+      setStatus(`${rows.length}건을 저장하는 중…`);
+      const result = await importExpenses(termId, rows);
+      setStatus(null);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setDone(result.created);
+      setPreview(null);
+      router.refresh();
+    });
+  }
+
+  const expenseRows = preview?.rows.filter((r) => r.kind === "expense") ?? [];
+  const skipped = preview?.rows.filter((r) => r.kind !== "expense") ?? [];
+  const selectedTotal = expenseRows.filter((r) => selected.has(r.line)).reduce((s, r) => s + (r.amount ?? 0), 0);
+
+  return (
+    <div className="space-y-5">
+      {error && (
+        <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {error}
+        </p>
+      )}
+
+      {done !== null && (
+        <div className="space-y-2 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
+          <p>
+            지출 <strong>{done}건</strong>을 만들었어요. 영수증을 붙여 주세요.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/expenses?receipt=missing")}
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            영수증 필요한 지출 보기 →
+          </button>
+        </div>
+      )}
+
+      {terms.length > 1 && (
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">학생회</span>
+          <select
+            value={termId}
+            onChange={(e) => {
+              setTermId(e.target.value);
+              setPreview(null);
+            }}
+            className={selectClass}
+            disabled={isPending}
+          >
+            {terms.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label
+        className={`flex h-14 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-zinc-400 text-base font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-900 ${
+          isPending ? "pointer-events-none opacity-60" : ""
+        }`}
+      >
+        {status ?? (preview ? "다른 파일 고르기" : "거래내역 파일 고르기")}
+        <input
+          type="file"
+          accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+          className="sr-only"
+          disabled={isPending}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) analyze(file, termId);
+            e.target.value = "";
+          }}
+        />
+      </label>
+
+      {!preview && done === null && (
+        <div className="space-y-1 rounded-xl bg-zinc-100 p-4 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+          <p className="font-medium text-zinc-800 dark:text-zinc-200">파일 받는 방법</p>
+          <p>은행 인터넷뱅킹(PC) → 거래내역 조회 → 기간 선택 → 엑셀 저장</p>
+          <p>카드사 홈페이지 → 이용내역(승인내역) 조회 → 엑셀 다운로드</p>
+          <p className="text-zinc-500">파일은 이 폰·컴퓨터 안에서만 읽고 서버에 올리지 않아요.</p>
+        </div>
+      )}
+
+      {preview && (
+        <>
+          <p className="text-sm text-zinc-500">
+            {preview.fileName}
+            {preview.sheetName ? ` · ${preview.sheetName}` : ""} · {preview.format === "bank" ? "통장 거래내역" : "카드 이용내역"}
+          </p>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium">가져올 지출 ({expenseRows.length}건)</h2>
+              {expenseRows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelected(selected.size === expenseRows.length ? new Set() : new Set(expenseRows.map((r) => r.line)))
+                  }
+                  className="text-sm text-blue-600 underline-offset-4 hover:underline"
+                >
+                  {selected.size === expenseRows.length ? "모두 해제" : "모두 선택"}
+                </button>
+              )}
+            </div>
+            {expenseRows.length > 0 ? (
+              <ul className="divide-y divide-zinc-200 overflow-hidden rounded-2xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                {expenseRows.map((r) => {
+                  const dup = preview.duplicates.get(r.line);
+                  return (
+                    <li key={r.line}>
+                      <label className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(r.line)}
+                          onChange={() => toggle(r.line)}
+                          className="mt-1 h-5 w-5 shrink-0 accent-blue-600"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex justify-between gap-3">
+                            <p className="truncate font-medium">{r.merchant || "(내용 없음)"}</p>
+                            <p className="shrink-0 font-semibold">{formatWon(r.amount ?? 0)}</p>
+                          </div>
+                          <p className="text-sm text-zinc-500">
+                            {r.spentOn ? formatShortDate(r.spentOn) : ""}
+                            {r.time ? ` ${r.time}` : ""} · {PAYMENT_METHOD_LABELS[r.method]}
+                          </p>
+                          {dup && (
+                            <p className="text-sm text-amber-700 dark:text-amber-300">
+                              이미 등록된 지출과 겹쳐요 ({formatShortDate(dup.spentOn)} {dup.merchant || "사용처 없음"})
+                            </p>
+                          )}
+                          {r.note && <p className="text-sm text-amber-700 dark:text-amber-300">{r.note}</p>}
+                        </div>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                가져올 출금·결제 건이 없어요.
+              </p>
+            )}
+          </section>
+
+          {skipped.length > 0 && (
+            <details className="rounded-2xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+              <summary className="cursor-pointer font-medium">
+                가져오지 않는 줄 {skipped.length}건 (입금 {skipped.filter((r) => r.kind === "deposit").length} · 취소{" "}
+                {skipped.filter((r) => r.kind === "cancel").length} · 읽지 못함 {skipped.filter((r) => r.kind === "invalid").length})
+              </summary>
+              <ul className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
+                {skipped.map((r) => (
+                  <li key={r.line}>
+                    {r.line}번째 줄 · {r.kind === "deposit" ? "입금" : r.kind === "cancel" ? "취소" : "읽지 못함"}
+                    {r.merchant ? ` · ${r.merchant}` : ""}
+                    {r.amount ? ` · ${formatWon(r.amount)}` : ""}
+                    {r.note ? ` · ${r.note}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          <button
+            type="button"
+            onClick={submit}
+            disabled={isPending || selected.size === 0}
+            className="h-12 w-full rounded-xl bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {isPending ? (status ?? "저장하는 중…") : `${selected.size}건 가져오기 (${formatWon(selectedTotal)})`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
