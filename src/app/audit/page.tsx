@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { buildAuditReport, type AuditExpenseInput, type AuditCheck } from "@/lib/audit";
+import { buildAuditReport, type AuditCheck, type AuditExpenseInput, type AuditIncomeInput } from "@/lib/audit";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { formatWon, todayInSeoul } from "@/lib/format";
@@ -82,7 +82,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
   let to = isDate(params.to) ? params.to : (term.ends_on ?? today);
   if (from > to) [from, to] = [to, from];
 
-  const [{ data: expenses, error }, { count: unparsed }] = await Promise.all([
+  const [{ data: expenses, error }, { count: unparsed }, { data: incomes, error: incomeError }] = await Promise.all([
     supabase
       .from("expenses")
       .select(
@@ -102,11 +102,22 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
       .not("parse_error", "is", null)
       .gte("received_at", `${from}T00:00:00+09:00`)
       .lte("received_at", `${to}T23:59:59+09:00`),
+    supabase
+      .from("incomes")
+      .select("id, received_on, created_at, source, payer, amount, memo")
+      .eq("term_id", term.id)
+      .is("deleted_at", null)
+      .gte("received_on", from)
+      .lte("received_on", to)
+      .limit(MAX_ROWS)
+      .overrideTypes<AuditIncomeInput[], { merge: false }>(),
   ]);
   if (error) throw error;
+  if (incomeError) throw incomeError;
 
   const report = buildAuditReport(
     (expenses ?? []).map(({ categories, ...e }) => ({ ...e, category: categories?.name ?? null })),
+    incomes ?? [],
   );
   const errorCount = report.checks.filter((c) => c.level === "error").reduce((s, c) => s + c.items.length, 0);
 
@@ -165,11 +176,21 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         </button>
       </Form>
 
-      <section className="space-y-1 rounded-2xl bg-zinc-100 px-5 py-4 dark:bg-zinc-900">
-        <div className="flex items-baseline justify-between">
-          <p className="text-sm text-zinc-500">지출 {report.rows.length}건</p>
-          <p className="text-2xl font-semibold">{formatWon(report.total)}</p>
-        </div>
+      <section className="space-y-2 rounded-2xl bg-zinc-100 px-5 py-4 dark:bg-zinc-900">
+        <dl className="space-y-1 text-sm">
+          <div className="flex items-baseline justify-between">
+            <dt className="text-zinc-500">예산액 (수입 {report.incomes.length}건)</dt>
+            <dd className="font-semibold text-green-700 dark:text-green-400">{formatWon(report.incomeTotal)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between">
+            <dt className="text-zinc-500">총 집행액 (지출 {report.rows.length}건)</dt>
+            <dd className="font-semibold">{formatWon(report.total)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between border-t border-zinc-200 pt-1 dark:border-zinc-800">
+            <dt className="font-medium">잔액</dt>
+            <dd className={`text-2xl font-semibold ${report.balance < 0 ? "text-red-600" : ""}`}>{formatWon(report.balance)}</dd>
+          </div>
+        </dl>
         <p className="text-sm text-zinc-500">
           영수증 {report.counts.receipt} · 사유서 {report.counts.excused} · 영수증 없음 {report.counts.missing}
           {report.counts.cancelled > 0 ? ` · 취소 제외 ${report.counts.cancelled}` : ""}
@@ -201,13 +222,21 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
                       {LEVEL_STYLE[c.level].label}
                     </span>
                     <span className="font-medium">{c.title}</span>{" "}
-                    <span className="text-zinc-500">{c.items.length}건</span>
+                    {c.items.length > 0 && <span className="text-zinc-500">{c.items.length}건</span>}
                   </summary>
                   <p className="mt-2 text-zinc-500">{c.description}</p>
+                  {c.key === "no-income" && (
+                    <Link href="/incomes/new" className="mt-2 inline-block text-blue-600 underline-offset-4 hover:underline">
+                      수입 등록하기 →
+                    </Link>
+                  )}
                   <ul className="mt-2 space-y-1">
                     {c.items.map((item) => (
                       <li key={item.id}>
-                        <Link href={`/expenses/${item.id}`} className="text-blue-600 underline-offset-4 hover:underline">
+                        <Link
+                          href={item.id.startsWith("income:") ? `/incomes/${item.id.slice(7)}` : `/expenses/${item.id}`}
+                          className="text-blue-600 underline-offset-4 hover:underline"
+                        >
                           {item.no ? `${item.no}번 · ` : ""}
                           {item.label}
                         </Link>
@@ -265,9 +294,6 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
           errorCount={errorCount}
           meta={{ schoolName: org.school_name, orgName: org.name, termName: term.name, from, to }}
         />
-        <p className="text-xs text-zinc-500">
-          지금은 기본 형식 엑셀이에요. 학교 감사 양식 파일을 주시면 그 양식 칸에 맞춰 채우도록 바꿀 수 있어요.
-        </p>
       </section>
     </>
   );

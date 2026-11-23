@@ -307,6 +307,42 @@ await expectError("익명은 결제 이벤트 직접 기록 불가", () => db.tr
   return tx.query(`insert into public.payment_events (organization_id, raw_text, dedupe_key) values ($1, 'x', 'k9')`, [orgId]);
 }));
 
+// --- 수입 (이 시점의 활성 기수는 term2, B는 아직 term2 멤버가 아님)
+const incA = (await as(A, `insert into public.incomes (term_id, received_on, source, payer, amount, created_by) values ($1, '2026-12-01', '학생회비', '홍길동', 300000, $2) returning id`, [term2, A])).rows[0].id;
+check("총무는 수입 등록", !!incA);
+await expectError("남의 이름으로 수입 등록 불가",
+  () => as(A, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-01', '기타', 1000, $2)`, [term2, B]), /row-level security/);
+await expectError("지난 기수에 수입 등록 불가",
+  () => as(A, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-11-01', '기타', 1000, $2)`, [term1, A]), /row-level security/);
+await expectError("0원 수입 거부",
+  () => as(A, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-01', '기타', 0, $2)`, [term2, A]), /check/);
+await expectError("외부인 수입 등록 불가",
+  () => as(C, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-01', '기타', 1000, $2)`, [term2, C]), /row-level security/);
+check("B(지난 기수 멤버)는 수입 조회", (await as(B, `select id from public.incomes where id = $1`, [incA])).rows.length === 1);
+check("외부인은 수입 못 봄", (await as(C, `select id from public.incomes`)).rows.length === 0);
+check("B는 수입 수정 불가", (await as(B, `update public.incomes set amount = 1 where id = $1 returning id`, [incA])).rows.length === 0);
+check("총무는 수입 수정", (await as(A, `update public.incomes set amount = 310000 where id = $1 returning id`, [incA])).rows.length === 1);
+check("물리 삭제는 막힘(수입)", (await as(A, `delete from public.incomes where id = $1 returning id`, [incA])).rows.length === 0);
+check("총무는 수입 삭제(소프트)", (await as(A, `update public.incomes set deleted_at = now() where id = $1 returning id`, [incA])).rows.length === 1);
+await expectError("수입 작성자 변경 불가",
+  () => as(A, `update public.incomes set created_by = $2 where id = $1`, [incA, B]), /작성자/);
+const incLogs = await as(A, `select action from public.audit_logs where income_id = $1 order by id`, [incA]);
+check("수입 변경 이력 기록(등록 + 수정 2회)", incLogs.rows.map((r) => r.action).join(",") === "insert,update,update");
+await expectError("이력은 지출·수입 중 하나만",
+  () => db.query(`insert into public.audit_logs (term_id, action) values ($1, 'insert')`, [term2]), /audit_logs_one_target/);
+
+// 결제 문자: 은행 입금 알림 → 수입
+const tokenRaw2 = "u".repeat(43);
+await as(A, `insert into public.webhook_tokens (organization_id, token_hash, created_by) values ($1, $2, $3)`,
+  [orgId, createHash("sha256").update(tokenRaw2, "utf8").digest("hex"), A]);
+const dep = await db.transaction(async (tx) => {
+  await tx.exec(`set local role anon;`);
+  return (await tx.query(`select public.ingest_payment_event($1, '입금 문자', 'deposit', 50000, '김학생', '2026-12-02T10:00:00+09:00', null, 'dep1') as r`, [tokenRaw2])).rows[0].r;
+});
+check("입금 문자로 수입 자동 기록", dep.result === "income_created" && !!dep.income_id);
+const autoInc = (await as(A, `select term_id, source, payer, amount, created_by, received_on::text from public.incomes where id = $1`, [dep.income_id])).rows[0];
+check("자동 수입: 현재 기수·기타·입금자", autoInc.term_id === term2 && autoInc.source === "기타" && autoInc.payer === "김학생" && Number(autoInc.amount) === 50000 && autoInc.created_by === null && autoInc.received_on === "2026-12-02");
+
 // --- 기수 전환 후 멤버 옮기기 (설정 화면)
 await expectError("집행부원은 새 기수에 자기를 넣을 수 없음",
   () => as(B, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'member')`, [term2, B]), /row-level security/);

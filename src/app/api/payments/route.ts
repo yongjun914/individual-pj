@@ -18,6 +18,7 @@ const MAX_TEXT = 2000;
 type IngestResult = {
   result:
     | "created"
+    | "income_created"
     | "cancelled"
     | "duplicate"
     | "unparsed"
@@ -26,10 +27,12 @@ type IngestResult = {
     | "invalid_token"
     | "bad_request";
   expense_id?: string;
+  income_id?: string;
 };
 
 const MESSAGES: Record<IngestResult["result"], string> = {
   created: "지출을 만들었어요. 영수증을 첨부해 주세요.",
+  income_created: "수입을 기록했어요. 수입 항목을 확인해 주세요.",
   cancelled: "결제 취소를 반영했어요.",
   duplicate: "이미 받은 문자예요.",
   unparsed: "문자를 받았지만 해석하지 못했어요. 결제 연동 화면의 수신 기록을 확인해 주세요.",
@@ -86,8 +89,11 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, message: "잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
 
-  const { result, expense_id } = data as IngestResult;
+  const { result, expense_id, income_id } = data as IngestResult;
   if (result === "invalid_token") return reply(result, 401);
   if (result === "bad_request") return reply(result, 400);
-  return reply(result, 200, expense_id ? { expenseId: expense_id } : {});
+  return reply(result, 200, {
+    ...(expense_id ? { expenseId: expense_id } : {}),
+    ...(income_id ? { incomeId: income_id } : {}),
+  });
 }

@@ -9,17 +9,40 @@ import { roleLabel } from "@/lib/roles";
 
 export type RecentExpense = ExpenseListItem;
 
+/** 이번 기수 수입·지출·잔액 (결산내역서의 '예산액 - 총 집행액 = 잔액') */
+function TermBalance({ income, expense, expenseCount }: { income: number; expense: number; expenseCount: number }) {
+  const balance = income - expense;
+  return (
+    <dl className="grid grid-cols-3 gap-2 pt-3 text-center">
+      <Link href="/incomes" className="rounded-xl bg-zinc-50 px-2 py-2 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+        <dt className="text-xs text-zinc-500">수입</dt>
+        <dd className="font-semibold text-green-700 dark:text-green-400">{formatWon(income)}</dd>
+      </Link>
+      <Link href="/expenses" className="rounded-xl bg-zinc-50 px-2 py-2 hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+        <dt className="text-xs text-zinc-500">지출 {expenseCount}건</dt>
+        <dd className="font-semibold">{formatWon(expense)}</dd>
+      </Link>
+      <div className="rounded-xl bg-zinc-50 px-2 py-2 dark:bg-zinc-900">
+        <dt className="text-xs text-zinc-500">잔액</dt>
+        <dd className={`font-semibold ${balance < 0 ? "text-red-600" : ""}`}>{formatWon(balance)}</dd>
+      </div>
+    </dl>
+  );
+}
+
 /** 홈 화면 표시 부분 (데이터는 page.tsx가 불러와 넘긴다) */
 export function HomeView({
   displayName,
   memberships,
   summary,
+  incomeTotals,
   recent,
   needsReceipt,
 }: {
   displayName: string | null;
   memberships: ActiveMembership[];
   summary: Record<string, TermSummary>;
+  incomeTotals: Record<string, number>;
   recent: RecentExpense[];
   needsReceipt: number;
 }) {
@@ -50,13 +73,11 @@ export function HomeView({
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {m.terms.name} · {roleLabel(m.role)}
             </p>
-            <div className="flex items-baseline justify-between pt-3">
-              <p className="text-sm text-zinc-500">이번 기수 지출</p>
-              <p className="text-right">
-                <span className="text-xl font-semibold">{formatWon(summary[m.terms.id]?.total ?? 0)}</span>
-                <span className="ml-1 text-sm text-zinc-500">{summary[m.terms.id]?.count ?? 0}건</span>
-              </p>
-            </div>
+            <TermBalance
+              income={incomeTotals[m.terms.id] ?? 0}
+              expense={summary[m.terms.id]?.total ?? 0}
+              expenseCount={summary[m.terms.id]?.count ?? 0}
+            />
           </div>
         ))}
       </section>

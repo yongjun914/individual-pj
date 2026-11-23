@@ -25,15 +25,15 @@ type EventRow = {
   id: string;
   organization_id: string;
   raw_text: string;
-  kind: "approval" | "cancel" | "unknown";
+  kind: "approval" | "deposit" | "cancel" | "unknown";
   amount: number | null;
   merchant: string | null;
   parse_error: string | null;
-  parsed: { expense_id?: string; cancelled_expense_id?: string } | null;
+  parsed: { expense_id?: string; cancelled_expense_id?: string; income_id?: string } | null;
   received_at: string;
 };
 
-const KIND_LABELS: Record<EventRow["kind"], string> = { approval: "승인", cancel: "취소", unknown: "알 수 없음" };
+const KIND_LABELS: Record<EventRow["kind"], string> = { approval: "지출", deposit: "입금", cancel: "취소", unknown: "알 수 없음" };
 
 export default function PaymentSettingsPage() {
   return (
@@ -45,8 +45,9 @@ export default function PaymentSettingsPage() {
         </Link>
       </div>
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        학생회 카드 결제 문자를 폰에서 자동으로 보내면, &lsquo;영수증 필요&rsquo; 지출이 바로 만들어져요. 결제가
-        취소되면 그 지출도 취소로 바뀌어요.
+        학생회 카드 결제 문자나 통장 입출금 알림 문자를 폰에서 자동으로 보내면, 출금·결제는 &lsquo;영수증 필요&rsquo;
+        지출로, 입금은 수입으로 바로 기록돼요. 결제가 취소되면 그 지출도 취소로 바뀌어요. 카드 결제 문자와 통장 출금
+        문자를 둘 다 보내면 같은 지출이 두 번 생기니, 지출은 한쪽만 보내 주세요.
       </p>
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <SettingsContent />
@@ -179,7 +180,7 @@ function EventItem({ event: e }: { event: EventRow }) {
         <div className="min-w-0">
           <p className="truncate font-medium">
             <span className={failed ? "text-amber-600" : "text-zinc-500"}>[{KIND_LABELS[e.kind]}]</span>{" "}
-            {e.merchant || "가맹점 모름"}
+            {e.merchant || (e.kind === "deposit" ? "입금자 모름" : "가맹점 모름")}
           </p>
           <p className="text-zinc-500">{formatDateTime(e.received_at)}</p>
         </div>
@@ -193,6 +194,11 @@ function EventItem({ event: e }: { event: EventRow }) {
         {expenseId && (
           <Link href={`/expenses/${expenseId}`} className="text-blue-600 underline-offset-4 hover:underline">
             지출 보기
+          </Link>
+        )}
+        {e.parsed?.income_id && (
+          <Link href={`/incomes/${e.parsed.income_id}`} className="text-blue-600 underline-offset-4 hover:underline">
+            수입 보기
           </Link>
         )}
         <details className="min-w-0 flex-1">

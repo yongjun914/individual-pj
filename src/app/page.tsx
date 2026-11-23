@@ -31,7 +31,7 @@ async function HomeContent() {
   if (memberships.length === 0) redirect("/onboarding");
 
   const termIds = memberships.map((m) => m.terms.id);
-  const [{ data: recent }, { data: summaryRows }] = await Promise.all([
+  const [{ data: recent }, { data: summaryRows }, { data: incomeRows }] = await Promise.all([
     supabase
       .from("expenses")
       .select("id, spent_on, merchant, amount, status, categories(name)")
@@ -47,9 +47,14 @@ async function HomeContent() {
       .in("term_id", termIds)
       .is("deleted_at", null)
       .overrideTypes<SummaryRow[], { merge: false }>(),
+    supabase.from("incomes").select("term_id, amount").in("term_id", termIds).is("deleted_at", null),
   ]);
 
   const summary = summarizeByTerm(summaryRows ?? []);
+  const incomeTotals: Record<string, number> = {};
+  for (const r of incomeRows ?? []) {
+    incomeTotals[r.term_id as string] = (incomeTotals[r.term_id as string] ?? 0) + Number(r.amount);
+  }
   const needsReceipt = (summaryRows ?? []).filter((r) => r.status === "needs_receipt").length;
 
   return (
@@ -57,6 +62,7 @@ async function HomeContent() {
       displayName={profile?.display_name || null}
       memberships={memberships}
       summary={summary}
+      incomeTotals={incomeTotals}
       recent={recent ?? []}
       needsReceipt={needsReceipt}
     />

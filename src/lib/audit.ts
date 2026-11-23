@@ -43,9 +43,28 @@ export type AuditCheck = {
 
 export type CategoryTotal = { category: string; count: number; total: number };
 
+export type AuditIncomeInput = {
+  id: string;
+  received_on: string;
+  created_at: string;
+  source: string;
+  payer: string;
+  amount: number;
+  memo: string;
+};
+
+export type SourceTotal = { source: string; count: number; total: number };
+
 export type AuditReport = {
   rows: AuditRow[];
+  /** 지출 합계 (결산내역서의 '총 집행액') */
   total: number;
+  /** 수입 (결산내역서의 '예산내역') */
+  incomes: AuditIncomeInput[];
+  incomeTotal: number;
+  incomeSources: SourceTotal[];
+  /** 수입 - 지출 */
+  balance: number;
   counts: { receipt: number; excused: number; missing: number; cancelled: number };
   checks: AuditCheck[];
   categories: CategoryTotal[];
@@ -58,8 +77,11 @@ function label(e: { spent_on: string; merchant: string; amount: number }) {
   return `${m}월 ${d}일 ${e.merchant || "사용처 없음"} ${e.amount.toLocaleString("ko-KR")}원`;
 }
 
-/** 감사 자료를 만든다. 취소된 지출은 번호·합계에서 빼고 점검에서만 알린다. */
-export function buildAuditReport(expenses: AuditExpenseInput[]): AuditReport {
+/**
+ * 감사 자료를 만든다. 취소된 지출은 번호·합계에서 빼고 점검에서만 알린다.
+ * 수입은 결산내역서의 '예산내역'(예산액)이 된다.
+ */
+export function buildAuditReport(expenses: AuditExpenseInput[], incomeInputs: AuditIncomeInput[] = []): AuditReport {
   const sorted = [...expenses].sort(
     (a, b) => a.spent_on.localeCompare(b.spent_on) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
   );
@@ -138,6 +160,47 @@ export function buildAuditReport(expenses: AuditExpenseInput[]): AuditReport {
     items: cancelled.map((e) => ({ id: e.id, no: null, label: label(e) })),
   });
 
+  const incomes = [...incomeInputs].sort(
+    (a, b) => a.received_on.localeCompare(b.received_on) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+  );
+  const incomeTotal = incomes.reduce((s, i) => s + i.amount, 0);
+
+  if (incomes.length === 0 && rows.length > 0) {
+    checks.push({
+      key: "no-income",
+      level: "warning",
+      title: "수입이 하나도 없어요",
+      description: "이월액·학회비 같은 수입을 넣어야 결산내역서의 예산액과 잔액이 맞아요.",
+      items: [],
+    });
+  }
+  const unsorted = incomes.filter((i) => i.source === "기타");
+  if (unsorted.length > 0) {
+    checks.push({
+      key: "income-other",
+      level: "warning",
+      title: "항목이 '기타'인 수입",
+      description: "입금 문자나 거래내역에서 자동으로 들어온 수입은 '기타'로 들어가요. 맞는 항목으로 바꿔 주세요.",
+      items: unsorted.map((i) => {
+        const [, m, d] = i.received_on.split("-").map(Number);
+        return { id: `income:${i.id}`, no: null, label: `${m}월 ${d}일 ${i.payer || "입금자 없음"} ${i.amount.toLocaleString("ko-KR")}원` };
+      }),
+    });
+  }
+
+  const bySource = new Map<string, SourceTotal & { firstOn: string }>();
+  for (const i of incomes) {
+    const s = bySource.get(i.source) ?? { source: i.source, count: 0, total: 0, firstOn: i.received_on };
+    s.count += 1;
+    s.total += i.amount;
+    bySource.set(i.source, s);
+  }
+  // 양식처럼: 이월액 → 회비·별도 납입 등 (받은 날짜 순) → 이자·할인·기타
+  const rank = (s: string) => (/이월/.test(s) ? 0 : /이자|할인|캐시백|환급|기타/.test(s) ? 2 : 1);
+  const incomeSources = [...bySource.values()]
+    .sort((a, b) => rank(a.source) - rank(b.source) || a.firstOn.localeCompare(b.firstOn) || b.total - a.total)
+    .map(({ source, count, total }) => ({ source, count, total }));
+
   const byCategory = new Map<string, CategoryTotal>();
   for (const r of rows) {
     const name = r.category ?? UNCATEGORIZED;
@@ -150,9 +213,16 @@ export function buildAuditReport(expenses: AuditExpenseInput[]): AuditReport {
     (a, b) => Number(a.category === UNCATEGORIZED) - Number(b.category === UNCATEGORIZED) || b.total - a.total,
   );
 
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const levelRank: Record<CheckLevel, number> = { error: 0, warning: 1, info: 2 };
+  checks.sort((a, b) => levelRank[a.level] - levelRank[b.level]);
   return {
     rows,
-    total: rows.reduce((s, r) => s + r.amount, 0),
+    total,
+    incomes,
+    incomeTotal,
+    incomeSources,
+    balance: incomeTotal - total,
     counts: {
       receipt: rows.filter((r) => r.evidence === "receipt").length,
       excused: rows.filter((r) => r.evidence === "excused").length,

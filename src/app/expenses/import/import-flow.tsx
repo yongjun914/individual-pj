@@ -3,13 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { findIncomeDuplicates, importIncomes } from "@/app/incomes/actions";
 import { PAYMENT_METHOD_LABELS } from "@/lib/expenses";
 import { formatShortDate, formatWon } from "@/lib/format";
+import { guessIncomeSource } from "@/lib/income-input";
 import { parseWorkbookSheets, type Cell, type StatementRow } from "@/lib/statement-import";
 
 import { findDuplicates, importExpenses, type DuplicateMatch } from "./actions";
 
-type TermOption = { id: string; label: string };
+type TermOption = { id: string; label: string; canIncome: boolean };
 
 /** 올릴 수 있는 파일 최대 크기 */
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -23,6 +25,7 @@ type Preview = {
   format: "bank" | "card";
   rows: StatementRow[];
   duplicates: Map<number, DuplicateMatch>;
+  incomeDuplicates: Map<number, { payer: string; receivedOn: string }>;
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -64,6 +67,8 @@ async function readSheets(file: File) {
   });
 }
 
+type ImportDone = { expenses: number; incomes: number };
+
 export function ImportFlow({ terms }: { terms: TermOption[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -71,8 +76,11 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  /** 고른 줄 번호 (지출·수입 공통, 줄 번호는 파일 안에서 하나뿐) */
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<ImportDone | null>(null);
+
+  const canIncome = terms.find((t) => t.id === termId)?.canIncome ?? false;
 
   function analyze(file: File, forTerm: string) {
     setError(null);
@@ -82,6 +90,7 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
       setError("파일이 너무 커요(5MB까지). 조회 기간을 나눠서 받아 주세요.");
       return;
     }
+    const withIncome = terms.find((t) => t.id === forTerm)?.canIncome ?? false;
 
     startTransition(async () => {
       setStatus("파일을 읽는 중…");
@@ -107,15 +116,31 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
       }
 
       const expenses = parsed.rows.filter((r) => r.kind === "expense" && r.spentOn && r.amount);
-      setStatus("이미 등록된 지출과 비교하는 중…");
-      const matches = await findDuplicates(
-        forTerm,
-        expenses.map((r) => ({ key: String(r.line), spentOn: r.spentOn!, amount: r.amount! })),
-      );
+      const deposits = withIncome ? parsed.rows.filter((r) => r.kind === "deposit" && r.spentOn && r.amount) : [];
+      setStatus("이미 등록된 내역과 비교하는 중…");
+      const [matches, incomeMatches] = await Promise.all([
+        findDuplicates(forTerm, expenses.map((r) => ({ key: String(r.line), spentOn: r.spentOn!, amount: r.amount! }))),
+        deposits.length > 0
+          ? findIncomeDuplicates(forTerm, deposits.map((r) => ({ key: String(r.line), receivedOn: r.spentOn!, amount: r.amount! })))
+          : Promise.resolve([]),
+      ]);
       const duplicates = new Map(matches.map((m) => [Number(m.key), m]));
+      const incomeDuplicates = new Map(incomeMatches.map((m) => [Number(m.key), m]));
 
-      setPreview({ fileName: file.name, sheetName: parsed.sheetName, format: parsed.format, rows: parsed.rows, duplicates });
-      setSelected(new Set(expenses.filter((r) => !r.cancelledInFile && !duplicates.has(r.line)).map((r) => r.line)));
+      setPreview({
+        fileName: file.name,
+        sheetName: parsed.sheetName,
+        format: parsed.format,
+        rows: parsed.rows,
+        duplicates,
+        incomeDuplicates,
+      });
+      setSelected(
+        new Set([
+          ...expenses.filter((r) => !r.cancelledInFile && !duplicates.has(r.line)).map((r) => r.line),
+          ...deposits.filter((r) => !incomeDuplicates.has(r.line)).map((r) => r.line),
+        ]),
+      );
       setStatus(null);
     });
   }
@@ -129,29 +154,60 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
     });
   }
 
-  function submit() {
-    if (!preview) return;
-    const rows = preview.rows
-      .filter((r) => selected.has(r.line) && r.kind === "expense")
-      .map((r) => ({ spentOn: r.spentOn!, merchant: r.merchant, amount: r.amount!, method: r.method }));
-    setError(null);
-    startTransition(async () => {
-      setStatus(`${rows.length}건을 저장하는 중…`);
-      const result = await importExpenses(termId, rows);
-      setStatus(null);
-      if (!result.ok) {
-        setError(result.error);
-        return;
+  function setAll(lines: number[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const l of lines) {
+        if (on) next.add(l);
+        else next.delete(l);
       }
-      setDone(result.created);
-      setPreview(null);
-      router.refresh();
+      return next;
     });
   }
 
   const expenseRows = preview?.rows.filter((r) => r.kind === "expense") ?? [];
-  const skipped = preview?.rows.filter((r) => r.kind !== "expense") ?? [];
-  const selectedTotal = expenseRows.filter((r) => selected.has(r.line)).reduce((s, r) => s + (r.amount ?? 0), 0);
+  const incomeRows = canIncome ? (preview?.rows.filter((r) => r.kind === "deposit") ?? []) : [];
+  const skipped = preview?.rows.filter((r) => r.kind !== "expense" && !(canIncome && r.kind === "deposit")) ?? [];
+  const pickedExpenses = expenseRows.filter((r) => selected.has(r.line));
+  const pickedIncomes = incomeRows.filter((r) => selected.has(r.line));
+  const picked = pickedExpenses.length + pickedIncomes.length;
+
+  function submit() {
+    if (!preview) return;
+    setError(null);
+    startTransition(async () => {
+      setStatus(`${picked}건을 저장하는 중…`);
+      const result: ImportDone = { expenses: 0, incomes: 0 };
+      if (pickedExpenses.length > 0) {
+        const r = await importExpenses(
+          termId,
+          pickedExpenses.map((x) => ({ spentOn: x.spentOn!, merchant: x.merchant, amount: x.amount!, method: x.method })),
+        );
+        if (!r.ok) {
+          setStatus(null);
+          setError(r.error);
+          return;
+        }
+        result.expenses = r.created;
+      }
+      if (pickedIncomes.length > 0) {
+        const r = await importIncomes(
+          termId,
+          pickedIncomes.map((x) => ({ receivedOn: x.spentOn!, payer: x.merchant, amount: x.amount!, hint: x.merchant })),
+        );
+        if (!r.ok) {
+          setStatus(null);
+          setError(result.expenses > 0 ? `지출 ${result.expenses}건은 저장했지만, 수입은 저장하지 못했어요. ${r.error}` : r.error);
+          return;
+        }
+        result.incomes = r.created;
+      }
+      setStatus(null);
+      setDone(result);
+      setPreview(null);
+      router.refresh();
+    });
+  }
 
   return (
     <div className="space-y-5">
@@ -161,18 +217,34 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
         </p>
       )}
 
-      {done !== null && (
+      {done && (
         <div className="space-y-2 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
           <p>
-            지출 <strong>{done}건</strong>을 만들었어요. 영수증을 붙여 주세요.
+            {done.expenses > 0 && (
+              <>
+                지출 <strong>{done.expenses}건</strong>
+              </>
+            )}
+            {done.expenses > 0 && done.incomes > 0 && ", "}
+            {done.incomes > 0 && (
+              <>
+                수입 <strong>{done.incomes}건</strong>
+              </>
+            )}
+            을 기록했어요.
           </p>
-          <button
-            type="button"
-            onClick={() => router.push("/expenses?receipt=missing")}
-            className="font-medium underline-offset-4 hover:underline"
-          >
-            영수증 필요한 지출 보기 →
-          </button>
+          <div className="flex flex-wrap gap-4">
+            {done.expenses > 0 && (
+              <button type="button" onClick={() => router.push("/expenses?receipt=missing")} className="font-medium underline-offset-4 hover:underline">
+                영수증 붙이러 가기 →
+              </button>
+            )}
+            {done.incomes > 0 && (
+              <button type="button" onClick={() => router.push("/incomes")} className="font-medium underline-offset-4 hover:underline">
+                수입 항목 확인하기 →
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -216,12 +288,13 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
         />
       </label>
 
-      {!preview && done === null && (
+      {!preview && !done && (
         <div className="space-y-1 rounded-xl bg-zinc-100 p-4 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
           <p className="font-medium text-zinc-800 dark:text-zinc-200">파일 받는 방법</p>
           <p>은행 인터넷뱅킹(PC) → 거래내역 조회 → 기간 선택 → 엑셀 저장</p>
           <p>카드사 홈페이지 → 이용내역(승인내역) 조회 → 엑셀 다운로드</p>
           <p className="text-zinc-500">파일은 이 폰·컴퓨터 안에서만 읽고 서버에 올리지 않아요.</p>
+          {!canIncome && <p className="text-zinc-500">입금(수입)은 총무·회장만 가져올 수 있어요.</p>}
         </div>
       )}
 
@@ -232,61 +305,36 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
             {preview.sheetName ? ` · ${preview.sheetName}` : ""} · {preview.format === "bank" ? "통장 거래내역" : "카드 이용내역"}
           </p>
 
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium">가져올 지출 ({expenseRows.length}건)</h2>
-              {expenseRows.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelected(selected.size === expenseRows.length ? new Set() : new Set(expenseRows.map((r) => r.line)))
-                  }
-                  className="text-sm text-blue-600 underline-offset-4 hover:underline"
-                >
-                  {selected.size === expenseRows.length ? "모두 해제" : "모두 선택"}
-                </button>
-              )}
-            </div>
-            {expenseRows.length > 0 ? (
-              <ul className="divide-y divide-zinc-200 overflow-hidden rounded-2xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-                {expenseRows.map((r) => {
-                  const dup = preview.duplicates.get(r.line);
-                  return (
-                    <li key={r.line}>
-                      <label className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(r.line)}
-                          onChange={() => toggle(r.line)}
-                          className="mt-1 h-5 w-5 shrink-0 accent-blue-600"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex justify-between gap-3">
-                            <p className="truncate font-medium">{r.merchant || "(내용 없음)"}</p>
-                            <p className="shrink-0 font-semibold">{formatWon(r.amount ?? 0)}</p>
-                          </div>
-                          <p className="text-sm text-zinc-500">
-                            {r.spentOn ? formatShortDate(r.spentOn) : ""}
-                            {r.time ? ` ${r.time}` : ""} · {PAYMENT_METHOD_LABELS[r.method]}
-                          </p>
-                          {dup && (
-                            <p className="text-sm text-amber-700 dark:text-amber-300">
-                              이미 등록된 지출과 겹쳐요 ({formatShortDate(dup.spentOn)} {dup.merchant || "사용처 없음"})
-                            </p>
-                          )}
-                          {r.note && <p className="text-sm text-amber-700 dark:text-amber-300">{r.note}</p>}
-                        </div>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-                가져올 출금·결제 건이 없어요.
-              </p>
-            )}
-          </section>
+          <RowSection
+            title="가져올 지출"
+            emptyText="가져올 출금·결제 건이 없어요."
+            rows={expenseRows}
+            selected={selected}
+            onToggle={toggle}
+            onSetAll={setAll}
+            renderSub={(r) => `${PAYMENT_METHOD_LABELS[r.method]}`}
+            renderWarning={(r) => {
+              const dup = preview.duplicates.get(r.line);
+              return dup ? `이미 등록된 지출과 겹쳐요 (${formatShortDate(dup.spentOn)} ${dup.merchant || "사용처 없음"})` : null;
+            }}
+          />
+
+          {canIncome && incomeRows.length > 0 && (
+            <RowSection
+              title="가져올 수입"
+              emptyText=""
+              rows={incomeRows}
+              selected={selected}
+              onToggle={toggle}
+              onSetAll={setAll}
+              positive
+              renderSub={(r) => `항목: ${guessIncomeSource(r.merchant)} (가져온 뒤 고칠 수 있어요)`}
+              renderWarning={(r) => {
+                const dup = preview.incomeDuplicates.get(r.line);
+                return dup ? `이미 기록된 수입과 겹쳐요 (${formatShortDate(dup.receivedOn)} ${dup.payer || "입금자 없음"})` : null;
+              }}
+            />
+          )}
 
           {skipped.length > 0 && (
             <details className="rounded-2xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
@@ -310,13 +358,92 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
           <button
             type="button"
             onClick={submit}
-            disabled={isPending || selected.size === 0}
+            disabled={isPending || picked === 0}
             className="h-12 w-full rounded-xl bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
-            {isPending ? (status ?? "저장하는 중…") : `${selected.size}건 가져오기 (${formatWon(selectedTotal)})`}
+            {isPending
+              ? (status ?? "저장하는 중…")
+              : `가져오기 (지출 ${pickedExpenses.length}건${canIncome ? ` · 수입 ${pickedIncomes.length}건` : ""})`}
           </button>
         </>
       )}
     </div>
+  );
+}
+
+function RowSection({
+  title,
+  emptyText,
+  rows,
+  selected,
+  onToggle,
+  onSetAll,
+  renderSub,
+  renderWarning,
+  positive,
+}: {
+  title: string;
+  emptyText: string;
+  rows: StatementRow[];
+  selected: Set<number>;
+  onToggle: (line: number) => void;
+  onSetAll: (lines: number[], on: boolean) => void;
+  renderSub: (r: StatementRow) => string;
+  renderWarning: (r: StatementRow) => string | null;
+  positive?: boolean;
+}) {
+  const lines = rows.map((r) => r.line);
+  const allOn = rows.length > 0 && rows.every((r) => selected.has(r.line));
+  const total = rows.filter((r) => selected.has(r.line)).reduce((s, r) => s + (r.amount ?? 0), 0);
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium">
+          {title} ({rows.length}건{total > 0 ? ` · 고른 금액 ${formatWon(total)}` : ""})
+        </h2>
+        {rows.length > 0 && (
+          <button type="button" onClick={() => onSetAll(lines, !allOn)} className="text-sm text-blue-600 underline-offset-4 hover:underline">
+            {allOn ? "모두 해제" : "모두 선택"}
+          </button>
+        )}
+      </div>
+      {rows.length > 0 ? (
+        <ul className="divide-y divide-zinc-200 overflow-hidden rounded-2xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+          {rows.map((r) => {
+            const warning = renderWarning(r);
+            return (
+              <li key={r.line}>
+                <label className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.line)}
+                    onChange={() => onToggle(r.line)}
+                    className="mt-1 h-5 w-5 shrink-0 accent-blue-600"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex justify-between gap-3">
+                      <p className="truncate font-medium">{r.merchant || "(내용 없음)"}</p>
+                      <p className={`shrink-0 font-semibold ${positive ? "text-green-700 dark:text-green-400" : ""}`}>
+                        {positive ? "+" : ""}
+                        {formatWon(r.amount ?? 0)}
+                      </p>
+                    </div>
+                    <p className="text-sm text-zinc-500">
+                      {r.spentOn ? formatShortDate(r.spentOn) : ""}
+                      {r.time ? ` ${r.time}` : ""} · {renderSub(r)}
+                    </p>
+                    {warning && <p className="text-sm text-amber-700 dark:text-amber-300">{warning}</p>}
+                    {r.note && <p className="text-sm text-amber-700 dark:text-amber-300">{r.note}</p>}
+                  </div>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">{emptyText}</p>
+      )}
+    </section>
   );
 }

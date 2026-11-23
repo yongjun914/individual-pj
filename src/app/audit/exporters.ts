@@ -48,6 +48,117 @@ function remark(r: AuditRow) {
 }
 
 // ---------------------------------------------------------------------
+// 엑셀: 결산내역서 (학교 양식과 같은 배치)
+// ---------------------------------------------------------------------
+
+/** "2026-05-11" → "26.05.11" (양식의 감사 대상 기간 표기) */
+function shortDate(iso: string) {
+  return iso.slice(2).replace(/-/g, ".");
+}
+
+type XlsxModule = typeof import("xlsx");
+type Merge = { s: { r: number; c: number }; e: { r: number; c: number } };
+
+/**
+ * 학회비 결산내역서 양식(한글 파일)의 배치를 7칸 표로 옮긴다.
+ *   결재란 → 제목·감사 기간 → 예산내역(수입) → 결산내역(지출) → 결산 총계
+ * 지출은 행사별로 묶고, 같은 행사의 둘째 줄부터는 행사명을 비운다(양식과 같게).
+ */
+function buildSettlementSheet(XLSX: XlsxModule, report: AuditReport, meta: AuditMeta) {
+  const rows: (string | number | null)[][] = [];
+  const merges: Merge[] = [];
+  const moneyCells: [number, number][] = [];
+  const merge = (r1: number, c1: number, r2: number, c2: number) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+  const blank = () => [null, null, null, null, null, null, null];
+  const push = (row: (string | number | null)[]) => rows.push([...row, ...blank()].slice(0, 7)) - 1;
+
+  // 결재란
+  let r = push([null, null, null, null, "결재", "총무", "학회장"]);
+  merge(r, 4, r + 1, 4);
+  push([]);
+  push([]);
+
+  // 제목
+  r = push([`${meta.termName} 결산내역서`]);
+  merge(r, 0, r, 6);
+  r = push([`(감사 대상 기간 : ${shortDate(meta.from)} ~ ${shortDate(meta.to)})  학부/과 : ${meta.orgName}`]);
+  merge(r, 0, r, 6);
+  push([]);
+
+  // 예산내역 (수입)
+  push(["예산내역"]);
+  r = push([`학부/과 : ${meta.orgName}`, null, null, null, null, null, "(단위 : 원)"]);
+  merge(r, 0, r, 5);
+  const sources = report.incomeSources.length > 0 ? report.incomeSources : [{ source: "(수입 없음)", count: 0, total: 0 }];
+  const firstIncome = rows.length;
+  for (const s of sources) {
+    r = push([null, s.source, null, null, s.total]);
+    merge(r, 1, r, 3);
+    merge(r, 4, r, 6);
+    moneyCells.push([r, 4]);
+  }
+  rows[firstIncome][0] = "예산액";
+  if (sources.length > 1) merge(firstIncome, 0, firstIncome + sources.length - 1, 0);
+  r = push(["예산 총계", report.incomeTotal]);
+  merge(r, 1, r, 6);
+  moneyCells.push([r, 1]);
+  push([]);
+
+  // 결산내역 (지출)
+  push(["결산내역서"]);
+  r = push([`학부/과 : ${meta.orgName}`, null, null, null, null, null, "(단위 : 원)"]);
+  merge(r, 0, r, 5);
+  r = push(["행사명", "집행액", "산출내역"]);
+  merge(r, 2, r, 6);
+
+  // 행사 순서: 첫 지출 번호 순, 미분류는 맨 뒤
+  const groups = new Map<string, AuditRow[]>();
+  for (const row of report.rows) {
+    const key = row.category ?? "미분류";
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const ordered = [...groups.entries()].sort(
+    ([a, ra], [b, rb]) => Number(a === "미분류") - Number(b === "미분류") || ra[0].no - rb[0].no,
+  );
+  for (const [category, items] of ordered) {
+    items.forEach((item, i) => {
+      r = push([i === 0 ? category : null, item.amount, `${item.merchant || "사용처 없음"} (증빙 ${item.no})`, null, null, item.amount]);
+      merge(r, 2, r, 4);
+      merge(r, 5, r, 6);
+      moneyCells.push([r, 1], [r, 5]);
+    });
+  }
+  if (report.rows.length === 0) {
+    r = push(["(지출 없음)"]);
+    merge(r, 0, r, 6);
+  }
+  r = push(["총 집행액", report.total]);
+  merge(r, 1, r, 6);
+  moneyCells.push([r, 1]);
+
+  // 결산 총계
+  r = push(["결산 총계", "예산액", null, "총 집행액", null, "잔액"]);
+  merge(r, 0, r + 1, 0);
+  merge(r, 1, r, 2);
+  merge(r, 3, r, 4);
+  merge(r, 5, r, 6);
+  const t = push([null, report.incomeTotal, null, report.total, null, report.balance]);
+  merge(t, 1, t, 2);
+  merge(t, 3, t, 4);
+  merge(t, 5, t, 6);
+  moneyCells.push([t, 1], [t, 3], [t, 5]);
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  for (const [mr, mc] of moneyCells) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: mr, c: mc })];
+    if (cell && typeof cell.v === "number") cell.z = "#,##0";
+  }
+  sheet["!merges"] = merges;
+  sheet["!cols"] = [16, 14, 12, 12, 12, 12, 12].map((wch) => ({ wch }));
+  return sheet;
+}
+
+// ---------------------------------------------------------------------
 // 엑셀
 // ---------------------------------------------------------------------
 
@@ -116,8 +227,25 @@ export async function buildAuditWorkbook(report: AuditReport, meta: AuditMeta) {
   const checks = XLSX.utils.aoa_to_sheet(checkRows);
   checks["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 6 }, { wch: 40 }];
 
+  // 4) 수입 내역
+  const incomeSheet = XLSX.utils.aoa_to_sheet([
+    [title.replace("지출 내역", "수입 내역")],
+    [period],
+    [],
+    ["받은 날", "수입 항목", "입금자", "금액", "메모"],
+    ...report.incomes.map((i) => [i.received_on, i.source, i.payer, i.amount, i.memo]),
+    ["합계", "", "", report.incomeTotal, `${report.incomes.length}건`],
+  ]);
+  for (let i = 4; i <= 4 + report.incomes.length; i++) {
+    const cell = incomeSheet[XLSX.utils.encode_cell({ r: i, c: 3 })];
+    if (cell) cell.z = "#,##0";
+  }
+  incomeSheet["!cols"] = [{ wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 30 }];
+
   const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, buildSettlementSheet(XLSX, report, meta), "결산내역서");
   XLSX.utils.book_append_sheet(wb, list, "지출 내역");
+  XLSX.utils.book_append_sheet(wb, incomeSheet, "수입 내역");
   XLSX.utils.book_append_sheet(wb, byCategory, "행사별 합계");
   XLSX.utils.book_append_sheet(wb, checks, "점검 결과");
   return new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" }));
@@ -214,7 +342,9 @@ function drawCover(report: AuditReport, meta: AuditMeta, totalPages: number) {
   ctx.font = `36px ${FONT}`;
   const lines = [
     `기간  ${meta.from} ~ ${meta.to}`,
+    `수입  ${report.incomes.length}건 · ${report.incomeTotal.toLocaleString("ko-KR")}원`,
     `지출  ${report.rows.length}건 · ${report.total.toLocaleString("ko-KR")}원`,
+    `잔액  ${report.balance.toLocaleString("ko-KR")}원`,
     `증빙  영수증 ${report.counts.receipt}건 · 분실 사유서 ${report.counts.excused}건 · 없음 ${report.counts.missing}건`,
     `페이지  표지 포함 ${totalPages}쪽`,
   ];
@@ -222,7 +352,7 @@ function drawCover(report: AuditReport, meta: AuditMeta, totalPages: number) {
 
   ctx.font = `30px ${FONT}`;
   ctx.fillStyle = "#64748b";
-  ctx.fillText("증빙 번호는 지출 내역 엑셀의 번호와 같아요.", MARGIN, 860);
+  ctx.fillText("증빙 번호는 결산내역서·지출 내역 엑셀의 번호와 같아요.", MARGIN, 1000);
   return canvas;
 }
 

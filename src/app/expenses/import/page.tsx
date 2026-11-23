@@ -21,8 +21,9 @@ export default function ImportPage() {
         </Link>
       </div>
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        은행 통장 거래내역이나 카드 이용내역을 엑셀로 받아 올리면, 출금·결제 건을 &lsquo;영수증 필요&rsquo; 지출로
-        한꺼번에 만들어요. 이미 등록된 지출과 겹치는 건은 미리 빼 둬요.
+        은행 통장 거래내역이나 카드 이용내역을 엑셀로 받아 올리면, 출금·결제 건은 &lsquo;영수증 필요&rsquo; 지출로,
+        입금 건은 수입으로
+        한꺼번에 기록해요. 이미 등록된 내역과 겹치는 건은 미리 빼 둬요.
       </p>
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <ImportContent />
@@ -40,6 +41,8 @@ async function ImportContent() {
   const terms = memberships.map((m) => ({
     id: m.terms.id,
     label: `${m.terms.organizations.name} · ${m.terms.name}`,
+    // 수입 기록은 총무·회장만 (DB 권한과 같게)
+    canIncome: m.role === "treasurer" || m.role === "president",
   }));
 
   return <ImportFlow terms={terms} />;

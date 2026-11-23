@@ -10,7 +10,7 @@ function exp(over) {
   return {
     id: `e${seq}`,
     spent_on: "2026-11-20",
-    created_at: `2026-11-20T10:00:0${seq % 10}Z`,
+    created_at: `2026-11-20T10:00:00.${String(seq).padStart(3, "0")}Z`,
     merchant: "가게",
     amount: 1000,
     items: "",
@@ -23,6 +23,60 @@ function exp(over) {
     ...over,
   };
 }
+
+function inc(over) {
+  seq += 1;
+  return {
+    id: `i${seq}`,
+    received_on: "2026-11-01",
+    created_at: `2026-11-01T10:00:00.${String(seq).padStart(3, "0")}Z`,
+    source: "학회비",
+    payer: "홍길동",
+    amount: 10000,
+    memo: "",
+    ...over,
+  };
+}
+
+describe("수입·잔액 (결산내역서의 예산내역)", () => {
+  const report = buildAuditReport(
+    [exp({ amount: 12000 })],
+    [
+      inc({ source: "이자", amount: 549 }),
+      inc({ source: "학회비", amount: 30000 }),
+      inc({ source: "이월액", amount: 100000 }),
+      inc({ source: "학회비", amount: 20000 }),
+      inc({ source: "기타", amount: 63, payer: "" }),
+    ],
+  );
+
+  test("항목별 합계, 이월액이 맨 앞·기타가 맨 뒤", () => {
+    assert.deepEqual(report.incomeSources.map((s) => [s.source, s.count, s.total]), [
+      ["이월액", 1, 100000],
+      ["학회비", 2, 50000],
+      ["이자", 1, 549],
+      ["기타", 1, 63],
+    ]);
+  });
+
+  test("예산 총계 - 총 집행액 = 잔액", () => {
+    assert.equal(report.incomeTotal, 150612);
+    assert.equal(report.total, 12000);
+    assert.equal(report.balance, 138612);
+  });
+
+  test("'기타' 수입은 확인할 것으로", () => {
+    const check = report.checks.find((c) => c.key === "income-other");
+    assert.equal(check.items.length, 1);
+    assert.match(check.items[0].id, /^income:/);
+  });
+
+  test("수입이 없으면 알린다", () => {
+    const noIncome = buildAuditReport([exp({})]);
+    assert.ok(noIncome.checks.some((c) => c.key === "no-income"));
+    assert.equal(noIncome.balance, -1000);
+  });
+});
 
 describe("번호와 합계", () => {
   const report = buildAuditReport([
@@ -72,7 +126,7 @@ describe("출력 전 점검", () => {
     exp({ id: "nomerchant", merchant: "(내용 없음)", amount: 1400 }),
     exp({ id: "dup1", spent_on: "2026-11-25", amount: 7700 }),
     exp({ id: "dup2", spent_on: "2026-11-25", amount: 7700 }),
-  ]);
+  ], [inc({ source: "학회비" })]);
   const byKey = Object.fromEntries(report.checks.map((c) => [c.key, c.items.map((i) => i.id)]));
 
   test("문제별로 해당 지출을 모은다", () => {

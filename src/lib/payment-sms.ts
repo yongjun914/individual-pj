@@ -11,7 +11,8 @@
  * 순수 함수만 두고 다른 모듈을 가져오지 않는다 (node --test로 바로 테스트하려고).
  */
 
-export type PaymentKind = "approval" | "cancel" | "unknown";
+/** approval: 카드 승인·통장 출금(지출) / deposit: 통장 입금(수입) / cancel: 결제 취소 */
+export type PaymentKind = "approval" | "deposit" | "cancel" | "unknown";
 
 export type ParsedPayment = {
   kind: PaymentKind;
@@ -62,16 +63,39 @@ export function maskSms(raw: string) {
 
 function detectKind(text: string): PaymentKind {
   if (/취소/.test(text)) return "cancel";
-  if (/승인|사용|결제/.test(text)) return "approval";
+  if (/입금/.test(text)) return "deposit";
+  if (/승인|사용|결제|출금|지급/.test(text)) return "approval";
   return "unknown";
 }
 
+const toAmount = (digits: string) => {
+  const value = Number(digits.replace(/,/g, ""));
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+};
+
 function findAmount(text: string) {
+  // 1) "12,500원"
   for (const m of text.matchAll(AMOUNT)) {
     const before = text.slice(Math.max(0, m.index - 8), m.index);
     if (NON_PAYMENT_AMOUNT.test(before)) continue;
-    const value = Number(m[1].replace(/,/g, ""));
-    if (Number.isSafeInteger(value) && value > 0) return { value, index: m.index, end: m.index + m[0].length };
+    const value = toAmount(m[1]);
+    if (value) return { value, index: m.index, end: m.index + m[0].length };
+  }
+  // 2) 은행 알림: "입금 50,000" (뒤에 '원'이 없다)
+  const labeled = text.match(/(?:입금|출금|지급)\s*[:：]?\s*(\d{1,3}(?:,\d{3})+|\d+)(?![\d:*-])/);
+  if (labeled?.index !== undefined) {
+    const value = toAmount(labeled[1]);
+    const start = labeled.index + labeled[0].length - labeled[1].length;
+    if (value) return { value, index: start, end: start + labeled[1].length };
+  }
+  // 3) 은행 알림: 숫자만 있는 줄 "50,000" (잔액 줄 제외)
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    if (/^\d{1,3}(?:,\d{3})+$/.test(line)) {
+      const value = toAmount(line);
+      if (value) return { value, index: offset, end: offset + line.length };
+    }
+    offset += line.length + 1;
   }
   return null;
 }
@@ -99,8 +123,14 @@ function toIso(month: number, day: number, hour: number, minute: number, now: Da
 /** 가맹점 이름 다듬기: 뒤에 붙은 누적·잔액 안내와 기호를 뗀다 */
 function cleanMerchant(value: string) {
   const cut = value.split(/\s*(?:총?누적|잔액|이용가능|한도)/)[0];
-  const merchant = cut.replace(/^[\s:：\-·]+|[\s:：\-·]+$/g, "").trim();
-  if (!merchant || /^\d[\d,]*원?$/.test(merchant)) return null;
+  // 계좌번호(110-***-123456), 입출금 표기(전자금융입금 등), 금액만 있는 조각은 뺀다
+  const tokens = cut
+    .split(/\s+/)
+    .filter((t) => t && !/^[\d*\-]{5,}$/.test(t))
+    .filter((t) => !/^(?:전자금융|타행|당행|인터넷|모바일|폰뱅킹|CMS|ATM|오픈뱅킹)?(?:입금|출금|이체|지급)$/.test(t))
+    .filter((t) => !/^\d[\d,]*원?$/.test(t));
+  const merchant = tokens.join(" ").replace(/^[\s:：\-·]+|[\s:：\-·]+$/g, "").trim();
+  if (!merchant) return null;
   return merchant.slice(0, 100);
 }
 
