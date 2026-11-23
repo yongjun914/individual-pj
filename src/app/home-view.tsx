@@ -82,9 +82,16 @@ export function HomeView({
         <ExpenseList items={recent} emptyText="아직 등록한 지출이 없어요." />
       </section>
 
-      <Link href="/onboarding" className="text-center text-sm text-zinc-500 underline-offset-4 hover:underline">
-        다른 학생회 만들기
-      </Link>
+      <div className="flex justify-center gap-4 text-sm text-zinc-500">
+        {memberships.some((m) => m.role === "treasurer" || m.role === "president") && (
+          <Link href="/settings/payments" className="underline-offset-4 hover:underline">
+            결제 문자 연동
+          </Link>
+        )}
+        <Link href="/onboarding" className="underline-offset-4 hover:underline">
+          다른 학생회 만들기
+        </Link>
+      </div>
     </>
   );
 }

@@ -2,6 +2,7 @@
 // 실행: npm run test:db
 // Supabase 전용 객체(auth, storage, 역할)는 최소한으로 흉내 낸다.
 import { PGlite } from "@electric-sql/pglite";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -221,6 +222,58 @@ await expectError("지난 기수 초대 링크 사용 불가",
   () => as(C, `select public.accept_invitation($1)`, [token]), /끝난 기수/);
 await expectError("한 학생회에 활성 기수 2개 불가",
   () => as(A, `update public.terms set is_active = true where id = $1`, [term1]), /duplicate|unique/);
+
+// --- 결제 문자 수신 (ingest_payment_event). 이 시점의 활성 기수는 term2
+const rawToken = "t".repeat(43);
+const tokenHash = createHash("sha256").update(rawToken, "utf8").digest("hex");
+const tokenId = (await as(A, `insert into public.webhook_tokens (organization_id, token_hash, label, created_by) values ($1, $2, '총무 아이폰', $3) returning id`, [orgId, tokenHash, A])).rows[0].id;
+
+async function ingest(params) {
+  const p = { token: rawToken, raw: "문자", kind: "approval", amount: 12500, merchant: "스타벅스", at: "2026-11-23T14:05:00+09:00", error: null, key: "d1", ...params };
+  return db.transaction(async (tx) => {
+    await tx.exec(`set local role anon;`);
+    const r = await tx.query(
+      `select public.ingest_payment_event($1, $2, $3, $4, $5, $6, $7, $8) as r`,
+      [p.token, p.raw, p.kind, p.amount, p.merchant, p.at, p.error, p.key],
+    );
+    return r.rows[0].r;
+  });
+}
+
+check("잘못된 토큰은 거부", (await ingest({ token: "x".repeat(43) })).result === "invalid_token");
+const created = await ingest({});
+check("승인 문자로 지출 자동 생성", created.result === "created" && !!created.expense_id);
+const auto = (await as(A, `select term_id, spent_on::text, merchant, amount, status, payment_method, created_by, payment_event_id from public.expenses where id = $1`, [created.expense_id])).rows[0];
+check("자동 지출은 현재 기수·영수증 필요·카드",
+  auto.term_id === term2 && auto.status === "needs_receipt" && auto.payment_method === "card" && auto.created_by === null && Number(auto.amount) === 12500);
+check("자동 지출 날짜는 승인 날짜(한국 시간)", auto.spent_on === "2026-11-23");
+check("B(지난 기수 멤버)도 자동 지출 조회", (await as(B, `select id from public.expenses where id = $1`, [created.expense_id])).rows.length === 1);
+check("같은 문자 다시 받으면 중복", (await ingest({})).result === "duplicate");
+check("중복이면 지출이 더 생기지 않음",
+  (await as(A, `select count(*)::int as n from public.expenses where payment_event_id is not null`)).rows[0].n === 1);
+check("토큰 사용 시각 기록", (await as(A, `select last_used_at from public.webhook_tokens where id = $1`, [tokenId])).rows[0].last_used_at !== null);
+
+const unparsed = await ingest({ key: "d2", kind: "unknown", amount: null, merchant: null, at: null, error: "금액을 찾지 못했어요." });
+check("해석 실패 문자는 기록만", unparsed.result === "unparsed" && !!unparsed.event_id);
+check("해석 실패 기록은 총무가 조회",
+  (await as(A, `select parse_error from public.payment_events where id = $1`, [unparsed.event_id])).rows[0]?.parse_error === "금액을 찾지 못했어요.");
+
+check("금액 범위 밖은 거부", (await ingest({ key: "d3", amount: 0 })).result === "bad_request");
+check("짝 없는 취소", (await ingest({ key: "d4", kind: "cancel", amount: 99999 })).result === "cancel_unmatched");
+const cancelled = await ingest({ key: "d5", kind: "cancel", at: "2026-11-23T14:30:00+09:00" });
+check("취소 문자로 원래 지출을 취소", cancelled.result === "cancelled" && cancelled.expense_id === created.expense_id);
+check("취소된 지출 상태",
+  (await as(A, `select status from public.expenses where id = $1`, [created.expense_id])).rows[0].status === "cancelled");
+check("이미 취소된 지출은 다시 취소 안 됨", (await ingest({ key: "d6", kind: "cancel" })).result === "cancel_unmatched");
+const autoLog = await as(A, `select actor_id from public.audit_logs where expense_id = $1 and action = 'insert'`, [created.expense_id]);
+check("자동 지출도 변경 이력 기록(작성자 없음)", autoLog.rows.length === 1 && autoLog.rows[0].actor_id === null);
+
+await as(A, `update public.webhook_tokens set revoked_at = now() where id = $1`, [tokenId]);
+check("폐기한 토큰은 거부", (await ingest({ key: "d7" })).result === "invalid_token");
+await expectError("익명은 결제 이벤트 직접 기록 불가", () => db.transaction(async (tx) => {
+  await tx.exec(`set local role anon;`);
+  return tx.query(`insert into public.payment_events (organization_id, raw_text, dedupe_key) values ($1, 'x', 'k9')`, [orgId]);
+}));
 
 console.log(results.join("\n"));
 console.log(`\n${results.length - failures}/${results.length} 통과`);
