@@ -101,6 +101,16 @@ await expectError("잘못된 토큰 거부", () => as(C, `select public.accept_i
 check("같은 학생회 프로필 조회(B→A)", (await as(B, `select * from public.profiles where id = $1`, [A])).rows.length === 1);
 check("외부인 프로필은 못 봄(C→A)", (await as(C, `select * from public.profiles where id = $1`, [A])).rows.length === 0);
 
+// --- 초대 미리보기
+const preview = await as(C, `select * from public.get_invitation_preview($1)`, [token]);
+check("외부인도 토큰으로 초대 미리보기", preview.rows.length === 1 && preview.rows[0].organization_name === "컴퓨터공학과 학생회" && preview.rows[0].already_member === false);
+check("이미 멤버면 already_member", (await as(B, `select already_member from public.get_invitation_preview($1)`, [token])).rows[0]?.already_member === true);
+check("잘못된 토큰 미리보기는 빈 결과", (await as(C, `select * from public.get_invitation_preview('nope')`)).rows.length === 0);
+await expectError("비로그인은 미리보기 불가", () => db.transaction(async (tx) => {
+  await tx.exec(`set local role anon;`);
+  return tx.query(`select * from public.get_invitation_preview('nope')`);
+}), /permission denied/);
+
 // --- 카테고리 권한
 await expectError("집행부원은 카테고리 추가 불가",
   () => as(B, `insert into public.categories (term_id, name) values ($1, '축제')`, [term1]), /row-level security/);
@@ -191,6 +201,7 @@ check("지난 기수 지출 수정 불가(총무도)", (await as(A, `update publ
 await expectError("지난 기수에 지출 등록 불가",
   () => as(A, `insert into public.expenses (term_id, spent_on, amount, created_by) values ($1, '2026-12-01', 1000, $2)`, [term1, A]), /row-level security/);
 check("B는 지난 기수 지출을 여전히 조회", (await as(B, `select * from public.expenses`)).rows.length === 2);
+check("지난 기수 초대는 미리보기도 빈 결과", (await as(C, `select * from public.get_invitation_preview($1)`, [token])).rows.length === 0);
 await expectError("지난 기수 초대 링크 사용 불가",
   () => as(C, `select public.accept_invitation($1)`, [token]), /끝난 기수/);
 await expectError("한 학생회에 활성 기수 2개 불가",
