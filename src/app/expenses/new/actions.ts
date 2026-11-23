@@ -1,49 +1,24 @@
 "use server";
 
 import { requireUserId } from "@/lib/auth";
-import { MAX_AMOUNT, MAX_RECEIPTS, PAYMENT_METHODS, type PaymentMethod } from "@/lib/expenses";
+import {
+  categoryBelongsToTerm,
+  toExpenseColumns,
+  UUID,
+  validateExpenseInput,
+  type ExpenseInput,
+  type FieldErrors,
+} from "@/lib/expense-input";
+import { MAX_RECEIPTS } from "@/lib/expenses";
 import { createClient } from "@/lib/supabase/server";
-
-export type ExpenseInput = {
-  termId: string;
-  spentOn: string;
-  merchant: string;
-  amount: number;
-  items: string;
-  paymentMethod: string;
-  categoryId: string;
-  memo: string;
-};
-
-type Field = "termId" | "spentOn" | "merchant" | "amount" | "items" | "paymentMethod" | "categoryId" | "memo";
 
 export type CreateExpenseResult =
   | { ok: true; expenseId: string; organizationId: string; termId: string }
-  | { ok: false; error?: string; fieldErrors?: Partial<Record<Field, string>> };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-function validate(input: ExpenseInput) {
-  const e: Partial<Record<Field, string>> = {};
-  if (!UUID.test(input.termId)) e.termId = "학생회를 골라 주세요.";
-  if (!ISO_DATE.test(input.spentOn) || Number.isNaN(Date.parse(input.spentOn))) {
-    e.spentOn = "날짜를 확인해 주세요.";
-  }
-  if (!input.merchant.trim()) e.merchant = "사용처를 입력해 주세요.";
-  else if (input.merchant.trim().length > 100) e.merchant = "100자 이내로 입력해 주세요.";
-  if (!Number.isInteger(input.amount) || input.amount <= 0) e.amount = "금액을 입력해 주세요.";
-  else if (input.amount > MAX_AMOUNT) e.amount = "금액이 너무 큽니다. 다시 확인해 주세요.";
-  if (input.items.length > 500) e.items = "500자 이내로 입력해 주세요.";
-  if (!PAYMENT_METHODS.includes(input.paymentMethod as PaymentMethod)) e.paymentMethod = "결제 수단을 골라 주세요.";
-  if (input.categoryId && !UUID.test(input.categoryId)) e.categoryId = "행사를 다시 골라 주세요.";
-  if (input.memo.length > 1000) e.memo = "1000자 이내로 입력해 주세요.";
-  return e;
-}
+  | { ok: false; error?: string; fieldErrors?: FieldErrors };
 
 /** 1단계: 지출을 '영수증 필요' 상태로 저장한다. 영수증 업로드는 브라우저가 이어서 한다. */
 export async function createExpense(input: ExpenseInput): Promise<CreateExpenseResult> {
-  const fieldErrors = validate(input);
+  const fieldErrors = validateExpenseInput(input);
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
   const userId = await requireUserId("/expenses/new");
@@ -59,19 +34,13 @@ export async function createExpense(input: ExpenseInput): Promise<CreateExpenseR
     return { ok: false, error: "이 학생회의 현재 기수에 지출을 등록할 수 없습니다." };
   }
 
+  if (!(await categoryBelongsToTerm(supabase, input.categoryId, input.termId))) {
+    return { ok: false, fieldErrors: { categoryId: "행사를 다시 골라 주세요." } };
+  }
+
   const { data, error } = await supabase
     .from("expenses")
-    .insert({
-      term_id: input.termId,
-      spent_on: input.spentOn,
-      merchant: input.merchant.trim(),
-      amount: input.amount,
-      items: input.items.trim(),
-      payment_method: input.paymentMethod,
-      category_id: input.categoryId || null,
-      memo: input.memo.trim(),
-      created_by: userId,
-    })
+    .insert({ term_id: input.termId, ...toExpenseColumns(input), created_by: userId })
     .select("id")
     .single();
 
@@ -106,6 +75,15 @@ export async function attachReceipts(
 
   const userId = await requireUserId("/expenses/new");
   const supabase = await createClient();
+
+  // 이미 붙은 영수증과 합쳐 최대 장수를 넘지 않게
+  const { count: existing } = await supabase
+    .from("receipts")
+    .select("id", { count: "exact", head: true })
+    .eq("expense_id", expenseId);
+  if ((existing ?? 0) + paths.length > MAX_RECEIPTS) {
+    return { ok: false, error: `영수증은 ${MAX_RECEIPTS}장까지 붙일 수 있습니다.` };
+  }
 
   const { error: insertError } = await supabase
     .from("receipts")

@@ -7,7 +7,10 @@ import { MAX_RECEIPTS, PAYMENT_METHODS, PAYMENT_METHOD_LABELS } from "@/lib/expe
 import { extensionFor, resizeImage } from "@/lib/image";
 import { createClient } from "@/lib/supabase/client";
 
-import { attachReceipts, createExpense, type ExpenseInput } from "./actions";
+import type { ExpenseInput } from "@/lib/expense-input";
+
+import { updateExpense } from "../[id]/actions";
+import { attachReceipts, createExpense } from "./actions";
 
 export type TermOption = { id: string; label: string };
 export type CategoryOption = { id: string; term_id: string; name: string };
@@ -24,14 +27,23 @@ function parseAmount(text: string) {
   return digits ? Number(digits) : 0;
 }
 
+/** 수정할 때 폼에 미리 채울 기존 지출 */
+export type EditingExpense = ExpenseInput & { id: string };
+
+/**
+ * 지출 등록·수정 폼.
+ * `expense`를 넘기면 수정 모드: 기수는 바꿀 수 없고, 영수증은 상세 화면에서 따로 관리한다.
+ */
 export function ExpenseForm({
   terms,
   categories,
   today,
+  expense,
 }: {
   terms: TermOption[];
   categories: CategoryOption[];
   today: string;
+  expense?: EditingExpense;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -39,10 +51,11 @@ export function ExpenseForm({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  const [termId, setTermId] = useState(terms[0]?.id ?? "");
-  const [amountText, setAmountText] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<string>("card");
-  const [categoryId, setCategoryId] = useState("");
+  const isEdit = Boolean(expense);
+  const [termId, setTermId] = useState(expense?.termId ?? terms[0]?.id ?? "");
+  const [amountText, setAmountText] = useState(expense ? expense.amount.toLocaleString("ko-KR") : "");
+  const [paymentMethod, setPaymentMethod] = useState<string>(expense?.paymentMethod ?? "card");
+  const [categoryId, setCategoryId] = useState(expense?.categoryId ?? "");
   const [photos, setPhotos] = useState<Photo[]>([]);
 
   const termCategories = categories.filter((c) => c.term_id === termId);
@@ -91,6 +104,22 @@ export function ExpenseForm({
 
     setError(null);
     setFieldErrors({});
+
+    if (expense) {
+      startTransition(async () => {
+        setProgress("저장하는 중…");
+        const updated = await updateExpense(expense.id, input);
+        if (!updated.ok) {
+          setProgress(null);
+          setFieldErrors(updated.fieldErrors ?? {});
+          setError(updated.error ?? (updated.fieldErrors ? "입력한 내용을 확인해 주세요." : null));
+          return;
+        }
+        router.push(`/expenses/${expense.id}`);
+        router.refresh();
+      });
+      return;
+    }
 
     startTransition(async () => {
       setProgress("저장하는 중…");
@@ -146,40 +175,42 @@ export function ExpenseForm({
         </p>
       )}
 
-      {/* 영수증 사진 */}
-      <section className="space-y-2">
-        <p className="text-sm font-medium">
-          영수증 <span className="font-normal text-zinc-500">({photos.length}/{MAX_RECEIPTS})</span>
-        </p>
-        {photos.length > 0 && (
-          <ul className="grid grid-cols-3 gap-2">
-            {photos.map((p) => (
-              <li key={p.id} className="relative aspect-[3/4] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
-                {/* eslint-disable-next-line @next/next/no-img-element -- 로컬 미리보기(blob URL) */}
-                <img src={p.url} alt="영수증 미리보기" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removePhoto(p.id)}
-                  disabled={isPending}
-                  className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm text-white"
-                  aria-label="이 영수증 빼기"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {photos.length < MAX_RECEIPTS && (
-          <div className="grid grid-cols-2 gap-3">
-            <PhotoPicker label="촬영하기" capture onPick={addPhotos} disabled={isPending} />
-            <PhotoPicker label="앨범에서 선택" onPick={addPhotos} disabled={isPending} />
-          </div>
-        )}
-        <p className="text-sm text-zinc-500">영수증이 없으면 비워 두고 나중에 첨부해도 돼요.</p>
-      </section>
+      {/* 영수증 사진 (수정 모드에서는 상세 화면에서 관리) */}
+      {!isEdit && (
+        <section className="space-y-2">
+          <p className="text-sm font-medium">
+            영수증 <span className="font-normal text-zinc-500">({photos.length}/{MAX_RECEIPTS})</span>
+          </p>
+          {photos.length > 0 && (
+            <ul className="grid grid-cols-3 gap-2">
+              {photos.map((p) => (
+                <li key={p.id} className="relative aspect-[3/4] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 로컬 미리보기(blob URL) */}
+                  <img src={p.url} alt="영수증 미리보기" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(p.id)}
+                    disabled={isPending}
+                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sm text-white"
+                    aria-label="이 영수증 빼기"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {photos.length < MAX_RECEIPTS && (
+            <div className="grid grid-cols-2 gap-3">
+              <PhotoPicker label="촬영하기" capture onPick={addPhotos} disabled={isPending} />
+              <PhotoPicker label="앨범에서 선택" onPick={addPhotos} disabled={isPending} />
+            </div>
+          )}
+          <p className="text-sm text-zinc-500">영수증이 없으면 비워 두고 나중에 첨부해도 돼요.</p>
+        </section>
+      )}
 
-      {terms.length > 1 && (
+      {!isEdit && terms.length > 1 && (
         <Field label="학생회" htmlFor="termId" error={fieldErrors.termId}>
           <select
             id="termId"
@@ -222,6 +253,7 @@ export function ExpenseForm({
         <input
           id="merchant"
           name="merchant"
+          defaultValue={expense?.merchant}
           placeholder="예: ○○마트"
           maxLength={100}
           className={inputClass}
@@ -230,7 +262,7 @@ export function ExpenseForm({
       </Field>
 
       <Field label="사용일" htmlFor="spentOn" error={fieldErrors.spentOn}>
-        <input id="spentOn" name="spentOn" type="date" defaultValue={today} max={today} className={inputClass} />
+        <input id="spentOn" name="spentOn" type="date" defaultValue={expense?.spentOn ?? today} max={today} className={inputClass} />
       </Field>
 
       <fieldset className="space-y-2">
@@ -260,13 +292,14 @@ export function ExpenseForm({
       </fieldset>
 
       <Field label="품목" htmlFor="items" error={fieldErrors.items} optional>
-        <input id="items" name="items" placeholder="예: 음료, 과자" maxLength={500} className={inputClass} />
+        <input id="items" name="items" defaultValue={expense?.items} placeholder="예: 음료, 과자" maxLength={500} className={inputClass} />
       </Field>
 
       <Field label="메모" htmlFor="memo" error={fieldErrors.memo} optional>
         <textarea
           id="memo"
           name="memo"
+          defaultValue={expense?.memo}
           rows={2}
           maxLength={1000}
           className={`${inputClass} h-auto py-3`}
@@ -335,7 +368,7 @@ function Chip({
   );
 }
 
-function PhotoPicker({
+export function PhotoPicker({
   label,
   capture,
   onPick,

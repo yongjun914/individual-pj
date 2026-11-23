@@ -179,6 +179,21 @@ await expectError("형식이 틀린 경로 업로드 불가(에러 없이 거부
   () => as(B, `insert into storage.objects (bucket_id, name) values ('receipts', 'abc/def/x.jpg')`), /row-level security/);
 check("외부인은 영수증 파일 못 봄", (await as(C, `select * from storage.objects`)).rows.length === 0);
 check("멤버는 영수증 파일 조회", (await as(B, `select * from storage.objects`)).rows.length === 1);
+const pathA = `${orgId}/${term1}/${expA}/a.jpg`;
+await as(A, `insert into storage.objects (bucket_id, name) values ('receipts', $1)`, [pathA]);
+check("집행부원은 남의 지출 영수증 파일 삭제 불가",
+  (await as(B, `delete from storage.objects where name = $1 returning id`, [pathA])).rows.length === 0);
+check("외부인은 영수증 파일 삭제 불가",
+  (await as(C, `delete from storage.objects where name = $1 returning id`, [goodPath])).rows.length === 0);
+check("집행부원은 본인 지출 영수증 파일 삭제",
+  (await as(B, `delete from storage.objects where name = $1 returning id`, [goodPath])).rows.length === 1);
+check("총무는 남의 지출 영수증 파일도 삭제",
+  (await as(A, `delete from storage.objects where name = $1 returning id`, [pathA])).rows.length === 1);
+check("B는 본인 지출 영수증 기록 삭제",
+  (await as(B, `delete from public.receipts where expense_id = $1 returning id`, [expB])).rows.length === 1);
+check("B는 본인 지출 삭제(소프트)",
+  (await as(B, `update public.expenses set deleted_at = now() where id = $1 returning id`, [expB])).rows.length === 1);
+await as(B, `update public.expenses set deleted_at = null where id = $1`, [expB]);
 
 // --- 멤버 관리
 await expectError("자기 자신 내보내기 불가(조용히 0건)", async () => {
