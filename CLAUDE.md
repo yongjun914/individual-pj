@@ -16,3 +16,4 @@
 - 금액은 원 단위 정수로 다룬다.
 - 기획·설계 문서는 `docs/`에 최신본만 보관한다.
 - 작업 후 `npm run lint`와 `npm run build`가 통과해야 한다.
+- DB 변경은 `supabase/migrations/`에 새 마이그레이션 파일로 추가하고(기존 파일 수정 금지), `npm run test:db`에 시나리오를 더해 통과시킨다.

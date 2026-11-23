@@ -34,6 +34,17 @@
 | `npm run build` | 프로덕션 빌드 |
 | `npm run start` | 빌드 결과 실행 |
 | `npm run lint` | ESLint 검사 |
+| `npm run test:db` | DB 스키마·권한(RLS) 검증 (메모리 Postgres, Supabase 불필요) |
+
+## DB 스키마 적용
+
+스키마는 `supabase/migrations/`에 있다. Supabase 프로젝트를 만든 뒤 한 번만 연결하고 적용한다.
+
+```bash
+npx supabase login
+npx supabase link --project-ref <프로젝트-ref>
+npx supabase db push
+```
 
 ## 폴더 구조
 
@@ -42,6 +53,9 @@ src/
   app/              화면(App Router), manifest.ts(PWA)
   lib/supabase/     Supabase 클라이언트(브라우저·서버·proxy용)
   proxy.ts          요청마다 로그인 세션 갱신 (Next.js 16의 middleware)
+supabase/
+  migrations/       DB 스키마(SQL)
+  tests/            RLS 권한 검증 스크립트
 public/             아이콘 등 정적 파일
 docs/               기획 문서 (git 미포함)
 ```
