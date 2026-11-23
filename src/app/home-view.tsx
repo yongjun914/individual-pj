@@ -89,9 +89,14 @@ export function HomeView({
 
       <div className="flex justify-center gap-4 text-sm text-zinc-500">
         {memberships.some((m) => m.role === "treasurer" || m.role === "president") && (
-          <Link href="/settings/payments" className="underline-offset-4 hover:underline">
-            결제 문자 연동
-          </Link>
+          <>
+            <Link href="/audit" className="underline-offset-4 hover:underline">
+              감사 준비
+            </Link>
+            <Link href="/settings/payments" className="underline-offset-4 hover:underline">
+              결제 문자 연동
+            </Link>
+          </>
         )}
         <Link href="/onboarding" className="underline-offset-4 hover:underline">
           다른 학생회 만들기
