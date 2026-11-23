@@ -76,7 +76,12 @@ async function IncomeContent({ params }: { params: PageProps<"/incomes/[id]">["p
         {income.terms.organizations.name} · {income.terms.name}
       </Row>
       <Row label="등록">
-        {income.created_by ? creator?.display_name || "이름 없음" : "입금 알림 문자"} · {formatDateTime(income.created_at)}
+        {income.created_by
+          ? creator?.display_name || "이름 없음"
+          : income.payment_event_id
+            ? "입금 알림 문자"
+            : "탈퇴한 사용자"}{" "}
+        · {formatDateTime(income.created_at)}
       </Row>
     </dl>
   );

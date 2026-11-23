@@ -88,7 +88,8 @@ async function DetailContent({
       ? await supabase.from("profiles").select("id, display_name").in("id", peopleIds)
       : { data: [] };
   const nameOf = (uid: string | null) => {
-    if (!uid) return "알 수 없음";
+    // 작성자가 비어 있으면 탈퇴한 사용자 (결제 문자 자동 처리는 아래에서 따로 표시)
+    if (!uid) return "탈퇴한 사용자";
     const name = (people ?? []).find((p) => p.id === uid)?.display_name;
     return name || "이름 없음";
   };
@@ -146,8 +147,8 @@ async function DetailContent({
         <Row label="품목">{expense.items || "-"}</Row>
         <Row label="메모">{expense.memo || "-"}</Row>
         <Row label="등록">
-          {nameOf(expense.created_by)} · {formatDateTime(expense.created_at)}
-          {expense.payment_event_id ? " (결제 문자)" : ""}
+          {!expense.created_by && expense.payment_event_id ? "결제 문자로 자동 등록" : nameOf(expense.created_by)} ·{" "}
+          {formatDateTime(expense.created_at)}
         </Row>
       </dl>
 
@@ -225,7 +226,8 @@ async function DetailContent({
               return (
                 <li key={log.id} className="space-y-1">
                   <p className="text-zinc-500">
-                    {formatDateTime(log.created_at)} · {nameOf(log.actor_id)}
+                    {formatDateTime(log.created_at)} ·{" "}
+                    {log.actor_id ? nameOf(log.actor_id) : expense.payment_event_id ? "자동 처리 또는 탈퇴한 사용자" : "탈퇴한 사용자"}
                   </p>
                   {log.action === "insert" ? (
                     <p>지출 등록</p>

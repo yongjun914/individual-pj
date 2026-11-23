@@ -19,6 +19,8 @@ await db.exec(`
   create role service_role nologin bypassrls;
   create schema auth;
   create table auth.users (id uuid primary key, raw_user_meta_data jsonb default '{}');
+  create table auth.identities (user_id uuid references auth.users (id) on delete cascade,
+    provider text, provider_id text);
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create schema storage;
@@ -356,6 +358,47 @@ check("총무는 멤버 역할 변경",
   (await as(A, `update public.memberships set role = 'president' where id = $1 returning id`, [bTerm2])).rows.length === 1);
 check("총무는 멤버 내보내기",
   (await as(A, `delete from public.memberships where id = $1 returning id`, [bTerm2])).rows.length === 1);
+
+// --- 회원 탈퇴 (이 시점: A는 term2의 유일한 총무, B는 term2에서 나간 상태)
+const D = "00000000-0000-0000-0000-00000000000d";
+await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, '{"name":"박혼자"}')`, [D]);
+await db.query(`insert into auth.identities (user_id, provider, provider_id) values ($1, 'kakao', 'k-d'), ($2, 'kakao', 'k-a')`, [D, A]);
+const orgD = (await as(D, `select public.create_organization('천안대', '혼자 학생회', '1기') as id`)).rows[0].id;
+const termD = (await as(D, `select id from public.terms where organization_id = $1`, [orgD])).rows[0].id;
+const expD = (await as(D, `insert into public.expenses (term_id, spent_on, merchant, amount, created_by) values ($1, '2026-12-03', '문구점', 3000, $2) returning id`, [termD, D])).rows[0].id;
+const incD = (await as(D, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-03', '학회비', 5000, $2) returning id`, [termD, D])).rows[0].id;
+
+const deletedKakao = (await as(D, `select public.delete_my_account() as k`)).rows[0].k;
+check("혼자인 학생회의 총무는 탈퇴 가능, 카카오 회원번호 반환", deletedKakao === "k-d");
+check("탈퇴하면 계정·프로필·멤버십·카카오 연결이 지워짐",
+  (await db.query(`select (select count(*) from auth.users where id = $1)::int + (select count(*) from public.profiles where id = $1)::int
+    + (select count(*) from public.memberships where user_id = $1)::int + (select count(*) from auth.identities where user_id = $1)::int as n`, [D])).rows[0].n === 0);
+const keptD = (await db.query(`select (select created_by from public.expenses where id = $1) as e, (select created_by from public.incomes where id = $2) as i,
+  (select count(*) from public.audit_logs where expense_id = $1)::int as logs`, [expD, incD])).rows[0];
+check("탈퇴해도 회계 기록은 남고 작성자만 비워짐", keptD.e === null && keptD.i === null && keptD.logs >= 1);
+check("탈퇴 후 이력의 작성자도 비워짐",
+  (await db.query(`select count(*)::int as n from public.audit_logs where actor_id = $1`, [D])).rows[0].n === 0);
+
+await as(A, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'member')`, [term2, B]);
+await expectError("다른 멤버가 있는데 유일한 총무면 탈퇴 불가",
+  () => as(A, `select public.delete_my_account()`), /유일한 총무·회장/);
+await expectError("비로그인은 탈퇴 함수 실행 불가", () => db.transaction(async (tx) => {
+  await tx.exec(`set local role anon;`);
+  return tx.query(`select public.delete_my_account()`);
+}), /permission denied/);
+await expectError("로그인 사용자도 카카오 번호로 남의 계정 삭제 불가",
+  () => as(B, `select public.delete_user_by_kakao_id('k-a')`), /permission denied/);
+
+const svc = async (sql, params = []) => db.transaction(async (tx) => {
+  await tx.exec(`set local role service_role;`);
+  return tx.query(sql, params);
+});
+check("없는 카카오 번호는 false", (await svc(`select public.delete_user_by_kakao_id('nope') as ok`)).rows[0].ok === false);
+check("서비스 키로 카카오 연결 해제 처리(A 삭제)", (await svc(`select public.delete_user_by_kakao_id('k-a') as ok`)).rows[0].ok === true);
+check("A가 만든 지출·수입·토큰은 남고 작성자만 비워짐",
+  (await db.query(`select (select count(*) from public.expenses where created_by = $1)::int + (select count(*) from public.incomes where created_by = $1)::int as n,
+    (select count(*) from public.expenses)::int as total`, [A])).rows[0].n === 0);
+check("A의 학생회는 남아 있음", (await db.query(`select count(*)::int as n from public.organizations where id = $1`, [orgId])).rows[0].n === 1);
 
 console.log(results.join("\n"));
 console.log(`\n${results.length - failures}/${results.length} 통과`);

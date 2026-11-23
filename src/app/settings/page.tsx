@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import {
   CategoryManager,
+  DeleteAccount,
   InviteCreator,
   InviteRow,
   MemberRow,
@@ -76,6 +77,9 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
   const myName = (
     <Section title="내 정보">
       <MyNameForm name={me?.display_name ?? ""} />
+      <div className="border-t border-zinc-200 pt-3 dark:border-zinc-800">
+        <DeleteAccount />
+      </div>
     </Section>
   );
 
@@ -114,6 +118,9 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
     );
   }
 
+  // 만료되지 않은 초대만 본다 (createClient가 요청 시점 실행을 보장해 현재 시각을 써도 된다)
+  const now = new Date().toISOString();
+
   const [{ data: members }, { data: invitations }, { data: categories }, { data: categorized }, { data: terms }] =
     await Promise.all([
       supabase
@@ -127,7 +134,7 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
         .select("id, token, role, expires_at")
         .eq("term_id", term.id)
         .is("revoked_at", null)
-        .gt("expires_at", new Date().toISOString())
+        .gt("expires_at", now)
         .order("created_at", { ascending: false })
         .overrideTypes<Invitation[], { merge: false }>(),
       supabase

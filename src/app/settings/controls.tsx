@@ -10,6 +10,7 @@ import {
   changeMemberRole,
   createInvitation,
   deleteCategory,
+  deleteMyAccount,
   moveCategory,
   removeMember,
   renameCategory,
@@ -581,5 +582,68 @@ export function MyNameForm({ name }: { name: string }) {
       {saved && value === name && <p className="text-sm text-zinc-500">저장했어요.</p>}
       <p className="text-sm text-zinc-500">지출 상세와 변경 이력에 이 이름으로 나와요.</p>
     </form>
+  );
+}
+
+// ---------------------------------------------------------------------
+// 회원 탈퇴
+// ---------------------------------------------------------------------
+
+export function DeleteAccount() {
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={`${linkButton} text-red-600`}>
+        회원 탈퇴
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-xl border border-red-200 p-4 text-sm dark:border-red-900">
+      <p className="font-medium text-red-700 dark:text-red-300">회원 탈퇴</p>
+      <ul className="list-disc space-y-1 pl-5 text-zinc-700 dark:text-zinc-300">
+        <li>내 계정과 이름·이메일, 카카오 로그인 연결이 지워져요. 되돌릴 수 없어요.</li>
+        <li>내가 등록한 지출·수입·영수증은 학생회 감사 기록이라 남고, 작성자는 &lsquo;탈퇴한 사용자&rsquo;로 표시돼요.</li>
+        <li>모든 학생회에서 나가게 돼요. 다시 쓰려면 새로 가입하고 초대를 받아야 해요.</li>
+        <li>다른 멤버가 있는 학생회의 유일한 총무·회장이면, 먼저 다른 멤버에게 역할을 넘겨야 탈퇴할 수 있어요.</li>
+      </ul>
+      {error && <ErrorText>{error}</ErrorText>}
+      <label className="block space-y-1">
+        <span className="text-zinc-500">확인을 위해 &lsquo;탈퇴&rsquo;라고 입력해 주세요.</span>
+        <input value={text} onChange={(e) => setText(e.target.value)} className={inputClass} aria-label="탈퇴 확인 입력" />
+      </label>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={isPending || text.trim() !== "탈퇴"}
+          onClick={() => {
+            setError(null);
+            startTransition(async () => {
+              const result = await deleteMyAccount(text);
+              if (result?.error) setError(result.error);
+            });
+          }}
+          className="h-11 flex-1 rounded-xl bg-red-600 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {isPending ? "탈퇴하는 중…" : "탈퇴하기"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setText("");
+            setError(null);
+          }}
+          className={`${linkButton} text-zinc-500`}
+        >
+          취소
+        </button>
+      </div>
+    </div>
   );
 }

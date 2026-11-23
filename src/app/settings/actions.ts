@@ -1,9 +1,11 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
+import { unlinkKakaoUser } from "@/lib/kakao";
 import type { MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
@@ -335,4 +337,34 @@ export async function updateMyName(displayName: string): Promise<ActionError> {
   }
   refresh();
   return null;
+}
+
+// ---------------------------------------------------------------------
+// 회원 탈퇴
+// ---------------------------------------------------------------------
+
+/**
+ * 회원 탈퇴: 계정과 개인정보(이름·이메일·카카오 연결)를 지운다.
+ * 학생회 회계 기록(지출·수입·영수증·이력)은 감사 때문에 남고, 작성자만 비워진다.
+ */
+export async function deleteMyAccount(confirmText: string): Promise<ActionError> {
+  if (confirmText.trim() !== "탈퇴") return { error: "확인을 위해 '탈퇴'라고 입력해 주세요." };
+
+  await requireUserId("/settings");
+  const supabase = await createClient();
+  const { data: kakaoUserId, error } = await supabase.rpc("delete_my_account");
+
+  if (error) {
+    console.error("회원 탈퇴 실패", error);
+    // 유일한 총무·회장이라 막힌 경우는 DB가 준 안내를 그대로 보여 준다
+    return { error: error.message.includes("유일한") ? error.message : "탈퇴하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  }
+
+  if (typeof kakaoUserId === "string" && kakaoUserId) {
+    await unlinkKakaoUser(kakaoUserId);
+  }
+
+  // 계정은 이미 지워졌으니 이 기기의 로그인 쿠키만 정리한다
+  await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+  redirect("/login?notice=deleted");
 }

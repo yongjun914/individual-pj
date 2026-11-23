@@ -3,8 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getSupabaseEnv, hasSupabaseEnv } from "./env";
 
-/** 로그인 없이 볼 수 있는 경로 (결제 문자 웹훅은 토큰으로 따로 인증한다) */
-const PUBLIC_PATHS = ["/login", "/auth", "/api/payments"];
+/** 로그인 없이 볼 수 있는 경로 (웹훅들은 토큰·어드민 키로 따로 인증한다) */
+const PUBLIC_PATHS = ["/login", "/auth", "/api/payments", "/api/kakao"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

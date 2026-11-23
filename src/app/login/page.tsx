@@ -40,9 +40,15 @@ async function LoginForm({ searchParams }: Pick<PageProps<"/login">, "searchPara
   const next = safeNextPath(params.next);
   const errorKey = typeof params.error === "string" ? params.error : undefined;
   const errorMessage = errorKey ? (ERROR_MESSAGES[errorKey] ?? ERROR_MESSAGES.callback) : null;
+  const deleted = params.notice === "deleted";
 
   return (
     <div className="space-y-4">
+      {deleted && (
+        <p role="status" className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
+          탈퇴가 완료됐어요. 그동안 이용해 주셔서 고마워요.
+        </p>
+      )}
       {errorMessage && (
         <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {errorMessage}
