@@ -16,6 +16,26 @@ export const STATUS_LABELS: Record<ExpenseStatus, string> = {
   cancelled: "취소",
 };
 
+/** 합계에서 빼는 상태 (결제 취소된 건은 쓴 돈이 아니다) */
+export function countsTowardTotal(status: ExpenseStatus) {
+  return status !== "cancelled";
+}
+
+export type SummaryRow = { term_id: string; amount: number; status: ExpenseStatus };
+export type TermSummary = { total: number; count: number };
+
+/** 기수별 지출 합계와 건수 (취소 건 제외) */
+export function summarizeByTerm(rows: SummaryRow[]) {
+  const result: Record<string, TermSummary> = {};
+  for (const r of rows) {
+    if (!countsTowardTotal(r.status)) continue;
+    const s = (result[r.term_id] ??= { total: 0, count: 0 });
+    s.total += r.amount;
+    s.count += 1;
+  }
+  return result;
+}
+
 /** 한 건 최대 금액 (입력 실수 방지용, 1억 원) */
 export const MAX_AMOUNT = 100_000_000;
 
