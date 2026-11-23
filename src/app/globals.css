@@ -2,25 +2,44 @@
 
 :root {
   --background: #ffffff;
+  --surface: #f8f9fb;
   --foreground: #171717;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-noto-sans-kr), "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #0b0b0c;
+    --surface: #161618;
     --foreground: #ededed;
+  }
+}
+
+/* 글자 크기: 휴대폰 16px, 태블릿 17px, PC 18px (Tailwind 크기는 rem이라 전체가 함께 커진다) */
+html {
+  font-size: 100%;
+}
+@media (min-width: 768px) {
+  html {
+    font-size: 106.25%;
+  }
+}
+@media (min-width: 1280px) {
+  html {
+    font-size: 112.5%;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  word-break: keep-all;
 }

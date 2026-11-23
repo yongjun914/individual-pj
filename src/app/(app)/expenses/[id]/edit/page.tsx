@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
@@ -14,11 +15,11 @@ export const metadata: Metadata = { title: "지출 수정" };
 
 export default function EditExpensePage({ params }: PageProps<"/expenses/[id]/edit">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="narrow">
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <EditContent params={params} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 

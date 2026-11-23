@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { ExpenseList, type ExpenseListItem } from "@/components/expense-list";
+import { ButtonLink, Page, PageHeader } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { countsTowardTotal } from "@/lib/expenses";
 import { formatWon } from "@/lib/format";
@@ -33,17 +34,23 @@ type Category = { id: string; term_id: string; name: string };
 
 export default function ExpensesPage({ searchParams }: PageProps<"/expenses">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">지출 목록</h1>
-        <Link href="/" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
-          홈
-        </Link>
-      </div>
+    <Page width="wide">
+      <PageHeader
+        title="지출 목록"
+        description="등록한 지출을 기간·행사·영수증 상태로 걸러 보고, 누르면 상세 화면에서 영수증을 붙이거나 고칠 수 있어요."
+        actions={
+          <>
+            <ButtonLink href="/expenses/new">+ 지출 등록</ButtonLink>
+            <ButtonLink href="/expenses/import" variant="secondary">
+              거래내역 가져오기
+            </ButtonLink>
+          </>
+        }
+      />
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <ExpensesContent searchParams={searchParams} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 
@@ -97,49 +104,39 @@ async function ExpensesContent({ searchParams }: { searchParams: PageProps<"/exp
   const categoryOptions = (categories ?? []).filter((c) => termIds.includes(c.term_id));
 
   return (
-    <>
-      <FilterForm
-        filters={filters}
-        terms={multiTerm ? memberships.map((m) => ({ id: m.terms.id, label: `${m.terms.organizations.name} · ${m.terms.name}` })) : []}
-        categories={categoryOptions.map((c) => ({
-          id: c.id,
-          label: multiTerm && termIds.length > 1 ? `${termName(c.term_id)} · ${c.name}` : c.name,
-        }))}
-      />
+    <div className="grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <aside className="lg:sticky lg:top-24">
+        <FilterForm
+          filters={filters}
+          terms={multiTerm ? memberships.map((m) => ({ id: m.terms.id, label: `${m.terms.organizations.name} · ${m.terms.name}` })) : []}
+          categories={categoryOptions.map((c) => ({
+            id: c.id,
+            label: multiTerm && termIds.length > 1 ? `${termName(c.term_id)} · ${c.name}` : c.name,
+          }))}
+        />
+      </aside>
 
-      <section className="flex items-baseline justify-between rounded-2xl bg-zinc-100 px-5 py-4 dark:bg-zinc-900">
-        <p className="text-sm text-zinc-500">합계 {counted.length}건</p>
-        <p className="text-xl font-semibold">{formatWon(total)}</p>
-      </section>
+      <div className="min-w-0 space-y-4">
+        <section className="flex items-baseline justify-between rounded-2xl bg-zinc-100 px-5 py-4 dark:bg-zinc-900">
+          <p className="text-zinc-500">
+            합계 {counted.length}건
+            {counted.length < expenses.length && <span className="ml-2 text-sm">(결제 취소 건 제외)</span>}
+          </p>
+          <p className="text-2xl font-bold tabular-nums">{formatWon(total)}</p>
+        </section>
 
-      {counted.length < expenses.length ? (
-        <p className="-mt-4 text-xs text-zinc-500">결제 취소된 지출은 합계에서 뺐어요.</p>
-      ) : null}
+        {expenses.length >= MAX_ROWS ? (
+          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            지출이 너무 많아 최근 {MAX_ROWS}건만 보여요. 기간을 좁혀 주세요.
+          </p>
+        ) : null}
 
-      {expenses.length >= MAX_ROWS ? (
-        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          지출이 너무 많아 최근 {MAX_ROWS}건만 보여요. 기간을 좁혀 주세요.
-        </p>
-      ) : null}
-
-      <ExpenseList
-        items={expenses}
-        emptyText={hasActiveFilter(filters) ? "조건에 맞는 지출이 없어요." : "아직 등록한 지출이 없어요."}
-      />
-
-      <Link
-        href="/expenses/new"
-        className="flex h-12 items-center justify-center rounded-2xl bg-blue-600 font-semibold text-white hover:bg-blue-700"
-      >
-        + 지출 등록
-      </Link>
-      <Link
-        href="/expenses/import"
-        className="-mt-3 text-center text-sm text-zinc-500 underline-offset-4 hover:underline"
-      >
-        통장·카드 거래내역 파일로 한꺼번에 가져오기
-      </Link>
-    </>
+        <ExpenseList
+          items={expenses}
+          emptyText={hasActiveFilter(filters) ? "조건에 맞는 지출이 없어요." : "아직 등록한 지출이 없어요. 위의 '+ 지출 등록'으로 시작해 보세요."}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -147,7 +144,8 @@ type Option = { id: string; label: string };
 
 function FilterForm({ filters, terms, categories }: { filters: ExpenseFilters; terms: Option[]; categories: Option[] }) {
   return (
-    <Form action="/expenses" className="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <Form action="/expenses" className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <p className="font-semibold">걸러 보기</p>
       {terms.length > 0 ? (
         <label className="block space-y-1">
           <span className="text-sm text-zinc-500">학생회</span>

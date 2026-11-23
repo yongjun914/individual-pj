@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
@@ -14,7 +15,7 @@ export const metadata: Metadata = { title: "수입 등록" };
 
 export default function NewIncomePage() {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="narrow">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">수입 등록</h1>
         <Link href="/incomes" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
@@ -24,7 +25,7 @@ export default function NewIncomePage() {
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <NewIncomeContent />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 

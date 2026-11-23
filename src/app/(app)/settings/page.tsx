@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Card, Page, PageHeader } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
@@ -11,11 +12,9 @@ import { createClient } from "@/lib/supabase/server";
 
 import {
   CategoryManager,
-  DeleteAccount,
   InviteCreator,
   InviteRow,
   MemberRow,
-  MyNameForm,
   OrgInfoForm,
   StartTermForm,
 } from "./controls";
@@ -24,17 +23,15 @@ export const metadata: Metadata = { title: "학생회 설정" };
 
 export default function SettingsPage({ searchParams }: PageProps<"/settings">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">학생회 설정</h1>
-        <Link href="/" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
-          홈
-        </Link>
-      </div>
+    <Page>
+      <PageHeader
+        title="학생회 설정"
+        description="학생회 정보, 멤버 초대와 역할, 행사 항목, 기수 전환을 관리해요. 총무·회장만 바꿀 수 있어요."
+      />
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <SettingsContent searchParams={searchParams} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 
@@ -43,15 +40,22 @@ type Invitation = { id: string; token: string; role: MemberRole; expires_at: str
 type Category = { id: string; name: string; sort_order: number };
 type Term = { id: string; name: string; is_active: boolean; starts_on: string | null; ends_on: string | null };
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+  wide,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  /** PC 2단 배치에서 두 칸을 다 쓰는지 */
+  wide?: boolean;
+}) {
   return (
-    <section className="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="space-y-1">
-        <h2 className="font-semibold">{title}</h2>
-        {description && <p className="text-sm text-zinc-500">{description}</p>}
-      </div>
+    <Card title={title} description={description} className={wide ? "lg:col-span-2" : ""}>
       {children}
-    </section>
+    </Card>
   );
 }
 
@@ -59,10 +63,7 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
   const { org: orgParam } = await searchParams;
   const userId = await requireUserId("/settings");
   const supabase = await createClient();
-  const [memberships, { data: me }] = await Promise.all([
-    getActiveMemberships(supabase, userId),
-    supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle(),
-  ]);
+  const memberships = await getActiveMemberships(supabase, userId);
   if (memberships.length === 0) redirect("/onboarding");
 
   const current =
@@ -74,13 +75,14 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
   const myRole = current.role as MemberRole;
   const isManager = myRole === "treasurer" || myRole === "president";
 
-  const myName = (
-    <Section title="내 정보">
-      <MyNameForm name={me?.display_name ?? ""} />
-      <div className="border-t border-zinc-200 pt-3 dark:border-zinc-800">
-        <DeleteAccount />
-      </div>
-    </Section>
+  const myPageNote = (
+    <p className="text-sm text-zinc-500">
+      내 이름 바꾸기·로그아웃·회원 탈퇴는{" "}
+      <Link href="/me" className="font-medium text-blue-600 underline-offset-4 hover:underline">
+        마이페이지
+      </Link>
+      에 있어요.
+    </p>
   );
 
   const orgPicker =
@@ -110,10 +112,10 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
     return (
       <>
         {orgPicker}
-        <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+        <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-zinc-500 dark:border-zinc-700">
           {org.name}에서 나는 {roleLabel(myRole)}이에요. 학생회 설정은 총무·회장만 바꿀 수 있어요.
         </p>
-        {myName}
+        {myPageNote}
       </>
     );
   }
@@ -175,6 +177,7 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
     <>
       {orgPicker}
 
+      <div className="grid gap-6 lg:grid-cols-2">
       <Section title="학생회 정보">
         <OrgInfoForm orgId={org.id} schoolName={org.school_name} name={org.name} />
       </Section>
@@ -237,13 +240,14 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
         <StartTermForm orgId={org.id} currentTermName={term.name} myRole={myRole} members={memberItems} />
       </Section>
 
-      <Section title="결제 연동">
-        <Link href="/settings/payments" className="text-sm text-blue-600 underline-offset-4 hover:underline">
+      <Section title="결제 연동" description="학생회 카드·통장 알림 문자를 받아 지출·수입을 자동으로 기록해요.">
+        <Link href="/settings/payments" className="font-medium text-blue-600 underline-offset-4 hover:underline">
           결제 문자 연동 설정 →
         </Link>
       </Section>
+      </div>
 
-      {myName}
+      {myPageNote}
     </>
   );
 }

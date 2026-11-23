@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { findIncomeDuplicates, importIncomes } from "@/app/incomes/actions";
+import { findIncomeDuplicates, importIncomes } from "@/app/(app)/incomes/actions";
 import { PAYMENT_METHOD_LABELS } from "@/lib/expenses";
 import { formatShortDate, formatWon } from "@/lib/format";
 import { guessIncomeSource } from "@/lib/income-input";

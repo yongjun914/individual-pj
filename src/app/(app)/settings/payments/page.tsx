@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { formatDateTime, formatWon } from "@/lib/format";
 import { getActiveMemberships, type ActiveMembership } from "@/lib/memberships";
@@ -37,7 +38,7 @@ const KIND_LABELS: Record<EventRow["kind"], string> = { approval: "지출", depo
 
 export default function PaymentSettingsPage() {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="normal">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">결제 문자 연동</h1>
         <Link href="/" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
@@ -52,7 +53,7 @@ export default function PaymentSettingsPage() {
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <SettingsContent />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 

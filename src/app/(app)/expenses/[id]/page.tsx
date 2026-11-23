@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { describeChanges, type AuditLogRow } from "@/lib/expense-history";
 import { MAX_RECEIPTS, PAYMENT_METHOD_LABELS, STATUS_LABELS } from "@/lib/expenses";
@@ -19,7 +20,7 @@ const SIGNED_URL_TTL = 60 * 60;
 
 export default function ExpenseDetailPage({ params, searchParams }: PageProps<"/expenses/[id]">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="normal">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">지출 상세</h1>
         <Link href="/expenses" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
@@ -29,7 +30,7 @@ export default function ExpenseDetailPage({ params, searchParams }: PageProps<"/
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <DetailContent params={params} searchParams={searchParams} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 
@@ -157,7 +158,7 @@ async function DetailContent({
           영수증 <span className="font-normal text-zinc-500">({receipts.length}/{MAX_RECEIPTS})</span>
         </h2>
         {receipts.length > 0 ? (
-          <ul className="grid grid-cols-3 gap-2">
+          <ul className="grid grid-cols-3 gap-3 md:grid-cols-4">
             {receipts.map((r) => {
               const url = urlByPath.get(r.storage_path);
               return (

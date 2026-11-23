@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "거래내역 가져오기" };
 
 export default function ImportPage() {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="normal">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">거래내역 가져오기</h1>
         <Link href="/expenses" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
@@ -28,7 +29,7 @@ export default function ImportPage() {
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <ImportContent />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 

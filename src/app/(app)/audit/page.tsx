@@ -4,6 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page, PageHeader } from "@/components/page";
 import { buildAuditReport, type AuditCheck, type AuditExpenseInput, type AuditIncomeInput } from "@/lib/audit";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
@@ -29,17 +30,15 @@ type ExpenseRow = Omit<AuditExpenseInput, "category"> & { categories: { name: st
 
 export default function AuditPage({ searchParams }: PageProps<"/audit">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">감사 준비</h1>
-        <Link href="/" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
-          홈
-        </Link>
-      </div>
+    <Page width="wide">
+      <PageHeader
+        title="감사 준비"
+        description="감사 기간을 고르고, 점검 결과를 고친 뒤 결산내역서와 증빙 PDF를 내려받아요."
+      />
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <AuditContent searchParams={searchParams} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 
@@ -145,7 +144,10 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         </nav>
       )}
 
-      <Form action="/audit" className="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
+      <div className="space-y-6 lg:sticky lg:top-24">
+      <Form action="/audit" className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+        <p className="font-semibold">1. 감사 기간 고르기</p>
         <input type="hidden" name="org" value={org.id} />
         <label className="block space-y-1">
           <span className="text-sm text-zinc-500">기수</span>
@@ -203,8 +205,19 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         </p>
       )}
 
+      <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="font-semibold">3. 감사 자료 내려받기</h2>
+        <AuditDownloads
+          report={report}
+          errorCount={errorCount}
+          meta={{ schoolName: org.school_name, orgName: org.name, termName: term.name, from, to }}
+        />
+      </section>
+      </div>
+
+      <div className="min-w-0 space-y-6">
       <section className="space-y-2">
-        <h2 className="font-semibold">출력 전 점검</h2>
+        <h2 className="text-lg font-semibold">2. 출력 전 점검</h2>
         {report.checks.length === 0 && !unparsed ? (
           <p className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
             문제가 없어요. 바로 내려받아도 돼요.
@@ -267,7 +280,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
 
       {report.categories.length > 0 && (
         <section className="space-y-2">
-          <h2 className="font-semibold">행사별 합계</h2>
+          <h2 className="text-lg font-semibold">행사별 합계</h2>
           <table className="w-full overflow-hidden rounded-2xl border border-zinc-200 text-sm dark:border-zinc-800">
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {report.categories.map((c) => (
@@ -286,15 +299,8 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
           </table>
         </section>
       )}
-
-      <section className="space-y-2">
-        <h2 className="font-semibold">감사 자료 내려받기</h2>
-        <AuditDownloads
-          report={report}
-          errorCount={errorCount}
-          meta={{ schoolName: org.school_name, orgName: org.name, termName: term.name, from, to }}
-        />
-      </section>
+      </div>
+      </div>
     </>
   );
 }

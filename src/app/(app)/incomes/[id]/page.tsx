@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { formatDateTime, formatLongDate, formatWon, todayInSeoul } from "@/lib/format";
@@ -31,7 +32,7 @@ type IncomeDetail = {
 
 export default function IncomeDetailPage({ params }: PageProps<"/incomes/[id]">) {
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
+    <Page width="narrow">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">수입 상세</h1>
         <Link href="/incomes" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
@@ -41,7 +42,7 @@ export default function IncomeDetailPage({ params }: PageProps<"/incomes/[id]">)
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <IncomeContent params={params} />
       </Suspense>
-    </main>
+    </Page>
   );
 }
 
