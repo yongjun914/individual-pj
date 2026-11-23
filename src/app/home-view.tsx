@@ -27,11 +27,16 @@ export function HomeView({
     <>
       <header className="flex items-center justify-between">
         <p className="text-sm text-zinc-500">{displayName ? `${displayName}님` : "안녕하세요"}</p>
-        <form action={signOut}>
-          <button type="submit" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
-            로그아웃
-          </button>
-        </form>
+        <div className="flex items-center gap-4">
+          <Link href="/settings" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
+            설정
+          </Link>
+          <form action={signOut}>
+            <button type="submit" className="text-sm text-zinc-500 underline-offset-4 hover:underline">
+              로그아웃
+            </button>
+          </form>
+        </div>
       </header>
 
       <section className="space-y-3">

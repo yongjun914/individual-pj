@@ -117,6 +117,23 @@ await expectError("집행부원은 카테고리 추가 불가",
   () => as(B, `insert into public.categories (term_id, name) values ($1, '축제')`, [term1]), /row-level security/);
 await as(A, `insert into public.categories (term_id, name) values ($1, '축제')`, [term1]);
 check("총무는 카테고리 추가", true);
+await expectError("같은 이름 카테고리 거부",
+  () => as(A, `insert into public.categories (term_id, name) values ($1, '축제')`, [term1]), /duplicate|unique/);
+check("집행부원은 카테고리 이름 변경 불가",
+  (await as(B, `update public.categories set name = 'x' where term_id = $1 and name = '축제' returning id`, [term1])).rows.length === 0);
+check("집행부원은 카테고리 삭제 불가",
+  (await as(B, `delete from public.categories where term_id = $1 and name = '축제' returning id`, [term1])).rows.length === 0);
+check("집행부원은 학생회 정보 수정 불가",
+  (await as(B, `update public.organizations set name = 'x' where id = $1 returning id`, [orgId])).rows.length === 0);
+check("총무는 학생회 정보 수정",
+  (await as(A, `update public.organizations set name = '컴퓨터공학과 학생회' where id = $1 returning id`, [orgId])).rows.length === 1);
+const tmpCat = (await as(A, `insert into public.categories (term_id, name) values ($1, '임시') returning id`, [term1])).rows[0].id;
+check("총무는 카테고리 삭제", (await as(A, `delete from public.categories where id = $1 returning id`, [tmpCat])).rows.length === 1);
+const tmpInv = (await as(A, `insert into public.invitations (term_id, created_by) values ($1, $2) returning id`, [term1, A])).rows[0].id;
+check("집행부원은 초대 폐기 불가",
+  (await as(B, `update public.invitations set revoked_at = now() where id = $1 returning id`, [tmpInv])).rows.length === 0);
+check("총무는 초대 폐기",
+  (await as(A, `update public.invitations set revoked_at = now() where id = $1 returning id`, [tmpInv])).rows.length === 1);
 
 // --- 지출
 const expA = (await as(A, `insert into public.expenses (term_id, spent_on, merchant, amount, created_by) values ($1, '2026-11-20', '○○마트', 152000, $2) returning id`, [term1, A])).rows[0].id;
@@ -274,6 +291,20 @@ await expectError("익명은 결제 이벤트 직접 기록 불가", () => db.tr
   await tx.exec(`set local role anon;`);
   return tx.query(`insert into public.payment_events (organization_id, raw_text, dedupe_key) values ($1, 'x', 'k9')`, [orgId]);
 }));
+
+// --- 기수 전환 후 멤버 옮기기 (설정 화면)
+await expectError("집행부원은 새 기수에 자기를 넣을 수 없음",
+  () => as(B, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'member')`, [term2, B]), /row-level security/);
+await as(A, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'member')`, [term2, B]);
+check("총무는 지난 기수 멤버를 새 기수로 옮김",
+  (await as(B, `select public.has_active_term_role($1, array['member']::public.member_role[]) as ok`, [term2])).rows[0].ok === true);
+check("옮겨진 멤버는 새 기수에 지출 등록",
+  (await as(B, `insert into public.expenses (term_id, spent_on, amount, created_by) values ($1, '2026-12-02', 1000, $2) returning id`, [term2, B])).rows.length === 1);
+const bTerm2 = (await as(A, `select id from public.memberships where term_id = $1 and user_id = $2`, [term2, B])).rows[0].id;
+check("총무는 멤버 역할 변경",
+  (await as(A, `update public.memberships set role = 'president' where id = $1 returning id`, [bTerm2])).rows.length === 1);
+check("총무는 멤버 내보내기",
+  (await as(A, `delete from public.memberships where id = $1 returning id`, [bTerm2])).rows.length === 1);
 
 console.log(results.join("\n"));
 console.log(`\n${results.length - failures}/${results.length} 통과`);
