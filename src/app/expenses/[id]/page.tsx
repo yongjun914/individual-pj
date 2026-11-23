@@ -9,7 +9,7 @@ import { MAX_RECEIPTS, PAYMENT_METHOD_LABELS, STATUS_LABELS } from "@/lib/expens
 import { formatDateTime, formatLongDate, formatWon } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
-import { DeleteExpenseButton, DeleteReceiptButton, ReceiptUploader } from "./controls";
+import { DeleteExpenseButton, DeleteReceiptButton, MissingReasonPanel, ReceiptUploader } from "./controls";
 import { getExpenseDetail } from "./data";
 
 export const metadata: Metadata = { title: "지출 상세" };
@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "지출 상세" };
 /** 영수증 사진 주소 유효 시간 (초) */
 const SIGNED_URL_TTL = 60 * 60;
 
-export default function ExpenseDetailPage({ params }: PageProps<"/expenses/[id]">) {
+export default function ExpenseDetailPage({ params, searchParams }: PageProps<"/expenses/[id]">) {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-8">
       <div className="flex items-center justify-between">
@@ -27,7 +27,7 @@ export default function ExpenseDetailPage({ params }: PageProps<"/expenses/[id]"
         </Link>
       </div>
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
-        <DetailContent params={params} />
+        <DetailContent params={params} searchParams={searchParams} />
       </Suspense>
     </main>
   );
@@ -35,8 +35,17 @@ export default function ExpenseDetailPage({ params }: PageProps<"/expenses/[id]"
 
 type Receipt = { id: string; storage_path: string };
 
-async function DetailContent({ params }: { params: PageProps<"/expenses/[id]">["params"] }) {
+async function DetailContent({
+  params,
+  searchParams,
+}: {
+  params: PageProps<"/expenses/[id]">["params"];
+  searchParams: PageProps<"/expenses/[id]">["searchParams"];
+}) {
   const { id } = await params;
+  const { upload_failed } = await searchParams;
+  // 등록 중 영수증 업로드에 실패하고 넘어온 경우 (몇 장 실패했는지)
+  const uploadFailed = Number(typeof upload_failed === "string" ? upload_failed : 0) || 0;
   const userId = await requireUserId(`/expenses/${id}`);
   const supabase = await createClient();
 
@@ -89,6 +98,15 @@ async function DetailContent({ params }: { params: PageProps<"/expenses/[id]">["
 
   return (
     <>
+      {uploadFailed > 0 && (
+        <p
+          role="alert"
+          className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+        >
+          지출은 저장했지만 영수증 {uploadFailed}장을 올리지 못했어요. 아래 &lsquo;영수증&rsquo;에서 다시 붙여 주세요.
+          (등록 화면에서 다시 저장하면 같은 지출이 하나 더 생겨요.)
+        </p>
+      )}
       {expense.deleted_at && (
         <p className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
           삭제된 지출이에요 ({formatDateTime(expense.deleted_at)}). 목록과 합계에는 나오지 않아요.
@@ -127,7 +145,6 @@ async function DetailContent({ params }: { params: PageProps<"/expenses/[id]">["
         <Row label="결제 수단">{PAYMENT_METHOD_LABELS[expense.payment_method]}</Row>
         <Row label="품목">{expense.items || "-"}</Row>
         <Row label="메모">{expense.memo || "-"}</Row>
-        {expense.missing_reason && <Row label="사유서">{expense.missing_reason}</Row>}
         <Row label="등록">
           {nameOf(expense.created_by)} · {formatDateTime(expense.created_at)}
           {expense.payment_event_id ? " (결제 문자)" : ""}
@@ -176,6 +193,15 @@ async function DetailContent({ params }: { params: PageProps<"/expenses/[id]">["
           />
         )}
       </section>
+
+      {(expense.status === "excused" || (canEdit && expense.status === "needs_receipt" && receipts.length === 0)) && (
+        <MissingReasonPanel
+          expenseId={expense.id}
+          reason={expense.missing_reason}
+          excused={expense.status === "excused"}
+          canEdit={canEdit}
+        />
+      )}
 
       {canEdit && (
         <div className="space-y-3">

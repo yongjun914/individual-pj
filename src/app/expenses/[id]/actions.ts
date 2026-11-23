@@ -79,6 +79,70 @@ export async function deleteExpense(expenseId: string): Promise<ActionState> {
   redirect("/expenses");
 }
 
+/** 사유서 최소·최대 길이 */
+const REASON_MIN = 10;
+const REASON_MAX = 1000;
+
+/**
+ * 영수증 분실 사유서 작성·수정 (F-11). 영수증이 한 장도 없는 지출만 '사유서' 상태로 바꾼다.
+ * 감사 출력에서 영수증 대신 이 사유가 들어간다.
+ */
+export async function submitMissingReason(expenseId: string, reason: string): Promise<ActionState> {
+  if (!UUID.test(expenseId)) return { error: "잘못된 요청입니다." };
+  const text = reason.trim();
+  if (text.length < REASON_MIN) return { error: `사유를 ${REASON_MIN}자 이상 적어 주세요.` };
+  if (text.length > REASON_MAX) return { error: `${REASON_MAX}자 이내로 적어 주세요.` };
+
+  await requireUserId(`/expenses/${expenseId}`);
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("receipts")
+    .select("id", { count: "exact", head: true })
+    .eq("expense_id", expenseId);
+  if ((count ?? 0) > 0) return { error: "영수증이 붙어 있는 지출은 사유서를 쓸 수 없어요." };
+
+  const { data, error } = await supabase
+    .from("expenses")
+    .update({ status: "excused", missing_reason: text })
+    .eq("id", expenseId)
+    .in("status", ["needs_receipt", "excused"])
+    .is("deleted_at", null)
+    .select("id");
+
+  if (error) {
+    console.error("사유서 저장 실패", error);
+    return { error: "사유서를 저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  }
+  if (!data || data.length === 0) return { error: NO_PERMISSION };
+
+  refresh();
+  return null;
+}
+
+/** 사유서 취소: 다시 '영수증 필요'로 되돌린다 (영수증을 찾은 경우 등) */
+export async function withdrawMissingReason(expenseId: string): Promise<ActionState> {
+  if (!UUID.test(expenseId)) return { error: "잘못된 요청입니다." };
+  await requireUserId(`/expenses/${expenseId}`);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("expenses")
+    .update({ status: "needs_receipt", missing_reason: null })
+    .eq("id", expenseId)
+    .eq("status", "excused")
+    .select("id");
+
+  if (error) {
+    console.error("사유서 취소 실패", error);
+    return { error: "사유서를 취소하지 못했어요." };
+  }
+  if (!data || data.length === 0) return { error: NO_PERMISSION };
+
+  refresh();
+  return null;
+}
+
 /** 영수증 한 장 삭제. 마지막 장을 지우면 지출을 '영수증 필요'로 되돌린다. */
 export async function deleteReceipt(receiptId: string): Promise<ActionState> {
   if (!UUID.test(receiptId)) return { error: "잘못된 요청입니다." };

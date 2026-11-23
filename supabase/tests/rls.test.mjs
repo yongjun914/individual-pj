@@ -162,6 +162,21 @@ check("집행부원은 이력 못 봄", (await as(B, `select * from public.audit
 await expectError("이력 직접 기록 불가",
   () => as(A, `insert into public.audit_logs (expense_id, term_id, action) values ($1, $2, 'insert')`, [expA, term1]), /row-level security/);
 
+// --- 영수증 분실 사유서 (F-11)
+check("총무는 사유서 작성(excused)",
+  (await as(A, `update public.expenses set status = 'excused', missing_reason = '행사 중 영수증 분실' where id = $1 returning id`, [expA])).rows.length === 1);
+check("집행부원은 남의 지출 사유서 취소 불가",
+  (await as(B, `update public.expenses set status = 'needs_receipt', missing_reason = null where id = $1 returning id`, [expA])).rows.length === 0);
+await expectError("사유서 상태에서 사유만 지우기 불가",
+  () => as(A, `update public.expenses set missing_reason = null where id = $1`, [expA]), /check/);
+check("영수증을 붙이면 사유서에서 완료로",
+  (await as(A, `update public.expenses set status = 'complete', missing_reason = null where id = $1 and status in ('needs_receipt', 'excused') returning id`, [expA])).rows.length === 1);
+check("사유서 취소하면 영수증 필요로",
+  (await as(A, `update public.expenses set status = 'needs_receipt' where id = $1 returning id`, [expA])).rows.length === 1);
+check("집행부원은 본인 지출 사유서 작성",
+  (await as(B, `update public.expenses set status = 'excused', missing_reason = '분실했습니다 (본인)' where id = $1 returning id`, [expB])).rows.length === 1);
+await as(B, `update public.expenses set status = 'needs_receipt', missing_reason = null where id = $1`, [expB]);
+
 // --- 영수증
 await as(B, `insert into public.receipts (expense_id, storage_path, created_by) values ($1, 'p/1.jpg', $2)`, [expB, B]);
 check("B는 본인 지출에 영수증 추가", true);

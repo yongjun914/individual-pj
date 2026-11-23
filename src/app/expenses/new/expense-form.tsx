@@ -144,21 +144,22 @@ export function ExpenseForm({
         if (!uploadError) uploaded.push(path);
       }
 
+      let failed = photos.length - uploaded.length;
       if (uploaded.length > 0) {
         setProgress("마무리하는 중…");
         const attached = await attachReceipts(created.expenseId, created.organizationId, created.termId, uploaded);
         if (!attached.ok) {
-          setProgress(null);
-          setError(`지출은 저장했지만 ${attached.error} 홈에서 다시 시도해 주세요.`);
-          return;
+          // 연결하지 못한 파일은 지워서 저장소에 떠도는 파일이 남지 않게
+          await supabase.storage.from("receipts").remove(uploaded);
+          failed = photos.length;
         }
       }
 
-      if (uploaded.length < photos.length) {
-        setProgress(null);
-        setError(
-          `지출은 저장했지만 영수증 ${photos.length - uploaded.length}장을 올리지 못했어요. 홈에서 '영수증 필요' 건으로 다시 첨부해 주세요.`,
-        );
+      // 지출은 이미 저장됐다. 폼에 남아 다시 저장하면 같은 지출이 또 생기므로,
+      // 영수증을 못 올렸어도 상세 화면으로 보내 거기서 다시 붙이게 한다.
+      if (failed > 0) {
+        router.push(`/expenses/${created.expenseId}?upload_failed=${failed}`);
+        router.refresh();
         return;
       }
 

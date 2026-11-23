@@ -94,11 +94,12 @@ export async function attachReceipts(
     return { ok: false, error: "영수증을 지출에 연결하지 못했습니다." };
   }
 
+  // 사유서를 썼다가 영수증을 찾아 붙인 경우도 '완료'로 (사유는 변경 이력에 남는다)
   const { error: updateError } = await supabase
     .from("expenses")
-    .update({ status: "complete" })
+    .update({ status: "complete", missing_reason: null })
     .eq("id", expenseId)
-    .eq("status", "needs_receipt");
+    .in("status", ["needs_receipt", "excused"]);
 
   if (updateError) {
     console.error("지출 상태 변경 실패", updateError);

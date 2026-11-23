@@ -8,7 +8,137 @@ import { createClient } from "@/lib/supabase/client";
 
 import { attachReceipts } from "../new/actions";
 import { PhotoPicker } from "../new/expense-form";
-import { deleteExpense, deleteReceipt } from "./actions";
+import { deleteExpense, deleteReceipt, submitMissingReason, withdrawMissingReason } from "./actions";
+
+/**
+ * 영수증 분실 사유서 (F-11).
+ * - 사유서 상태: 사유를 보여 주고, 고치거나 취소할 수 있다.
+ * - 영수증 필요 상태(영수증 0장): 사유서를 쓸 수 있다.
+ */
+export function MissingReasonPanel({
+  expenseId,
+  reason,
+  excused,
+  canEdit,
+}: {
+  expenseId: string;
+  reason: string | null;
+  excused: boolean;
+  canEdit: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(reason ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  function save() {
+    setError(null);
+    startTransition(async () => {
+      const result = await submitMissingReason(expenseId, text);
+      if (result?.error) setError(result.error);
+      else setEditing(false);
+    });
+  }
+
+  function withdraw() {
+    if (!confirm("사유서를 취소하고 '영수증 필요'로 되돌릴까요?")) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await withdrawMissingReason(expenseId);
+      if (result?.error) setError(result.error);
+      else setText("");
+    });
+  }
+
+  if (!excused && !editing) {
+    return (
+      <section className="space-y-2 rounded-2xl border border-dashed border-zinc-300 p-4 text-sm dark:border-zinc-700">
+        <p className="text-zinc-600 dark:text-zinc-400">
+          영수증을 잃어버렸나요? 분실 사유서를 쓰면 감사 자료에 영수증 대신 사유가 들어가요.
+        </p>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="font-medium text-blue-600 underline-offset-4 hover:underline"
+        >
+          분실 사유서 쓰기
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <h2 className="text-sm font-medium">영수증 분실 사유서</h2>
+      {error && <ErrorText>{error}</ErrorText>}
+
+      {editing ? (
+        <>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={5}
+            maxLength={1000}
+            placeholder={"예: 행사 당일 영수증을 받았으나 이동 중 분실했습니다. 카드 승인 문자와 통장 거래내역으로 결제를 확인할 수 있습니다."}
+            aria-label="분실 사유"
+            className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <p className="text-xs text-zinc-500">
+            언제·어떻게 잃어버렸는지, 결제를 무엇으로 확인할 수 있는지(카드 내역, 거래내역 등) 적어 주세요. ({text.trim().length}
+            /1000자, 10자 이상)
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={save}
+              disabled={isPending || text.trim().length < 10}
+              className="h-11 flex-1 rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {isPending ? "저장하는 중…" : "사유서 저장"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setText(reason ?? "");
+                setEditing(false);
+                setError(null);
+              }}
+              className="text-sm text-zinc-500 underline-offset-4 hover:underline"
+            >
+              취소
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="whitespace-pre-wrap break-words text-sm">{reason}</p>
+          {canEdit && (
+            <div className="flex gap-4 text-sm">
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="text-blue-600 underline-offset-4 hover:underline"
+              >
+                고치기
+              </button>
+              <button
+                type="button"
+                onClick={withdraw}
+                disabled={isPending}
+                className="text-red-600 underline-offset-4 hover:underline disabled:opacity-50"
+              >
+                사유서 취소
+              </button>
+            </div>
+          )}
+          {canEdit && (
+            <p className="text-xs text-zinc-500">영수증을 찾으면 위에서 사진을 붙이세요. 자동으로 &lsquo;완료&rsquo;가 돼요.</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
 function ErrorText({ children }: { children: React.ReactNode }) {
   return (
