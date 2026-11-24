@@ -4,10 +4,23 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
+/** 이미 있는 같은 이름의 학생회 (만들기 전에 안내) */
+export type SameOrganization = {
+  id: string;
+  schoolName: string;
+  name: string;
+  leader: string;
+  createdOn: string;
+  memberCount: number;
+  isMember: boolean;
+  requested: boolean;
+};
+
 export type CreateOrgState = {
   error?: string;
   fieldErrors?: Partial<Record<"schoolName" | "name" | "termName" | "role", string>>;
   values?: { schoolName: string; name: string; termName: string; role: string };
+  duplicates?: SameOrganization[];
 };
 
 const ROLES = ["president", "vice_president"] as const;
@@ -50,7 +63,35 @@ export async function createOrganization(
     p_name: values.name,
     p_term_name: values.termName,
     p_my_role: values.role,
+    p_allow_duplicate: formData.get("allowDuplicate") === "1",
   });
+
+  // 같은 이름의 학생회가 이미 있으면: 만들지 않고 그 학생회를 보여 준다 (참여 요청 / 그래도 만들기)
+  if (error && /같은 이름/.test(error.message)) {
+    const { data } = await supabase.rpc("find_same_organizations", { p_school_name: values.schoolName, p_name: values.name });
+    const duplicates = (
+      (data ?? []) as {
+        organization_id: string;
+        school_name: string;
+        name: string;
+        leader: string;
+        created_on: string;
+        member_count: number;
+        is_member: boolean;
+        requested: boolean;
+      }[]
+    ).map((d) => ({
+      id: d.organization_id,
+      schoolName: d.school_name,
+      name: d.name,
+      leader: d.leader,
+      createdOn: d.created_on,
+      memberCount: d.member_count,
+      isMember: d.is_member,
+      requested: d.requested,
+    }));
+    return { values, duplicates };
+  }
 
   if (error) {
     console.error("create_organization 실패", error);

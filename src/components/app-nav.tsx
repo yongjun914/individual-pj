@@ -202,7 +202,7 @@ function Avatar({ name }: { name: string }) {
 const TABS = [
   { href: "/", label: "홈", icon: "⌂" },
   { href: "/expenses", label: "지출", icon: "↗" },
-  { href: "/expenses/new", label: "등록", icon: "+", primary: true },
+  { href: "/incomes", label: "수입", icon: "↙" },
   { href: "/events", label: "행사", icon: "✓" },
   { href: "/me", label: "마이", icon: "☺" },
 ];
@@ -217,11 +217,7 @@ export function BottomTabBar() {
     >
       <ul className="grid grid-cols-5">
         {TABS.map((tab) => {
-          // '지출' 탭은 등록 화면에서는 켜지지 않게
-          const active =
-            tab.href === "/expenses"
-              ? isActive(pathname, "/expenses") && !pathname.startsWith("/expenses/new")
-              : isActive(pathname, tab.href);
+          const active = isActive(pathname, tab.href);
           return (
             <li key={tab.href}>
               <Link
@@ -229,21 +225,13 @@ export function BottomTabBar() {
                 aria-current={active ? "page" : undefined}
                 className="flex h-16 flex-col items-center justify-center gap-0.5 text-xs font-medium"
               >
-                {tab.primary ? (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-2xl leading-none text-white shadow">
-                    {tab.icon}
-                  </span>
-                ) : (
-                  <>
-                    <span
-                      aria-hidden
-                      className={`flex h-7 w-12 items-center justify-center rounded-full text-xl leading-none ${active ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "text-zinc-400"}`}
-                    >
-                      {tab.icon}
-                    </span>
-                    <span className={active ? "text-blue-700 dark:text-blue-300" : "text-zinc-500"}>{tab.label}</span>
-                  </>
-                )}
+                <span
+                  aria-hidden
+                  className={`flex h-7 w-12 items-center justify-center rounded-full text-xl leading-none ${active ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "text-zinc-400"}`}
+                >
+                  {tab.icon}
+                </span>
+                <span className={active ? "text-blue-700 dark:text-blue-300" : "text-zinc-500"}>{tab.label}</span>
               </Link>
             </li>
           );

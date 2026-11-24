@@ -576,6 +576,31 @@ check("본인은 요청 취소", (await db.query(`select status from public.join
 // 정리: C는 term2에서 내보낸다
 await as(A, `delete from public.memberships where term_id = $1 and user_id = $2`, [term2, C]);
 
+// --- 같은 이름 학생회 막기 · 찾기 결과의 구분 정보 (이 시점: term2에는 A(학회장)만)
+check("이름 가운데 가리기",
+  (await db.query(`select public.mask_name('정용준') as a, public.mask_name('홍길') as b, public.mask_name('남궁민수') as c`)).rows
+    .every((r) => r.a === "정○준" && r.b === "홍○" && r.c === "남○○수"));
+const hit = (await as(C, `select * from public.search_organizations('컴퓨터공학')`)).rows[0];
+check("찾기 결과에 학회장 이름 일부·멤버 수·만든 날짜", hit.leader === "김○무" && hit.member_count === 1 && !!hit.created_on);
+const same = (await as(C, `select * from public.find_same_organizations('천안 대', '컴퓨터공학과학생회')`)).rows;
+check("띄어쓰기가 달라도 같은 이름 학생회를 찾음", same.length === 1 && same[0].organization_id === orgId && same[0].is_member === false);
+check("멤버면 같은 이름 찾기에 '참여 중'으로 표시",
+  (await as(A, `select is_member from public.find_same_organizations('천안대', '컴퓨터공학과 학생회')`)).rows[0].is_member === true);
+check("이름이 다르면 같은 이름 학생회 없음",
+  (await as(C, `select * from public.find_same_organizations('천안대', '전자공학과 학생회')`)).rows.length === 0);
+await expectError("같은 이름 학생회는 확인 없이 못 만듦",
+  () => as(C, `select public.create_organization('천안대', '컴퓨터공학과 학생회', '2027')`), /같은 이름/);
+await expectError("대소문자·띄어쓰기만 달라도 막음",
+  () => as(C, `select public.create_organization('천안대', ' 컴퓨터공학과학생회 ', '2027')`), /같은 이름/);
+const dupOrg = (await as(C, `select public.create_organization('천안대', '컴퓨터공학과 학생회', '2027', 'president', true) as id`)).rows[0].id;
+check("다른 학생회라고 확인하면 만들 수 있음", !!dupOrg && dupOrg !== orgId);
+check("새 이름의 학생회는 그냥 만들어짐",
+  !!(await as(C, `select public.create_organization('천안대', 'C의 새 학생회', '2027') as id`)).rows[0].id);
+await expectError("비로그인은 같은 이름 찾기 불가", () => db.transaction(async (tx) => {
+  await tx.exec(`set local role anon;`);
+  return tx.query(`select * from public.find_same_organizations('천안대', '컴퓨터공학과 학생회')`);
+}), /permission denied/);
+
 // --- 회원 탈퇴 (이 시점: A는 term2의 유일한 총무, B는 term2에서 나간 상태)
 const D = "00000000-0000-0000-0000-00000000000d";
 await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, '{"name":"박혼자"}')`, [D]);

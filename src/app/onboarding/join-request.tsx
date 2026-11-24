@@ -85,6 +85,9 @@ function FoundRow({ org }: { org: FoundOrganization }) {
         <div className="min-w-0">
           <p className="text-sm text-zinc-500">{org.schoolName}</p>
           <p className="truncate font-semibold">{org.name}</p>
+          <p className="text-sm text-zinc-500">
+            {[org.leader && `학회장 ${org.leader}`, `멤버 ${org.memberCount}명`, `${org.createdOn} 만듦`].filter(Boolean).join(" · ")}
+          </p>
         </div>
         {sent ? (
           <span className="shrink-0 rounded-full bg-amber-50 px-3 py-1 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">

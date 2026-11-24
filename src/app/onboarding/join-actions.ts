@@ -6,7 +6,17 @@ import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { createClient } from "@/lib/supabase/server";
 
-export type FoundOrganization = { id: string; schoolName: string; name: string; termName: string; requested: boolean };
+export type FoundOrganization = {
+  id: string;
+  schoolName: string;
+  name: string;
+  termName: string;
+  requested: boolean;
+  /** 같은 이름도 구분할 수 있게: 학회장 이름 일부(정○준), 멤버 수, 만든 날 */
+  leader: string;
+  memberCount: number;
+  createdOn: string;
+};
 
 /** DB 함수가 낸 한국어 안내는 그대로, 그 밖은 일반 문구로 */
 function friendly(error: { message?: string } | null, fallback: string) {
@@ -27,9 +37,27 @@ export async function searchOrganizations(query: string): Promise<{ ok: true; it
     console.error("학생회 찾기 실패", error);
     return { ok: false, error: "학생회를 찾지 못했어요. 잠시 후 다시 시도해 주세요." };
   }
-  const items = ((data ?? []) as { organization_id: string; school_name: string; name: string; term_name: string; requested: boolean }[]).map(
-    (r) => ({ id: r.organization_id, schoolName: r.school_name, name: r.name, termName: r.term_name, requested: r.requested }),
-  );
+  const items = (
+    (data ?? []) as {
+      organization_id: string;
+      school_name: string;
+      name: string;
+      term_name: string;
+      requested: boolean;
+      leader: string;
+      member_count: number;
+      created_on: string;
+    }[]
+  ).map((r) => ({
+    id: r.organization_id,
+    schoolName: r.school_name,
+    name: r.name,
+    termName: r.term_name,
+    requested: r.requested,
+    leader: r.leader,
+    memberCount: r.member_count,
+    createdOn: r.created_on,
+  }));
   return { ok: true, items };
 }
 
