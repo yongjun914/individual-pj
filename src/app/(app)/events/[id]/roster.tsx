@@ -6,15 +6,19 @@ import { JACKET_SIZES, type EventKind } from "@/lib/events";
 import { parseRoster, type RosterError, type RosterRow } from "@/lib/roster-import";
 
 import {
+  addCheckColumn,
   addParticipant,
   assignDeposit,
   deleteEvent,
   deleteParticipant,
   importParticipants,
   recordFeeIncome,
+  removeCheckColumn,
   setParticipantFlag,
   setParticipantsFlag,
+  setParticipantsCheck,
   updateParticipant,
+  type ActionError,
   type ParticipantInput,
 } from "../actions";
 
@@ -31,6 +35,8 @@ export type Participant = {
   dues_exempt: boolean;
   /** 입금 문자로 확인된 납부 */
   paid_income_id: string | null;
+  /** 행사에서 추가한 체크 항목 값 {"티셔츠 수령": true} */
+  checks: Record<string, boolean>;
 };
 
 const inputClass =
@@ -155,12 +161,14 @@ export function RosterTable({
   eventId,
   kind,
   extraFields,
+  checkColumns,
   participants,
   canEdit,
 }: {
   eventId: string;
   kind: EventKind;
   extraFields: string[];
+  checkColumns: string[];
   participants: Participant[];
   canEdit: boolean;
 }) {
@@ -171,6 +179,9 @@ export function RosterTable({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulk] = useTransition();
   const [bulkMessage, setBulkMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // 일괄 체크할 칸: 납부·참석 또는 추가한 항목
+  const [bulkTarget, setBulkTarget] = useState<string>("paid");
+  const target = bulkTarget === "paid" || bulkTarget === "attended" || checkColumns.includes(bulkTarget) ? bulkTarget : "paid";
 
   const rows = useMemo(() => {
     const q = query.trim();
@@ -210,17 +221,20 @@ export function RosterTable({
     });
   }
 
-  function applyBulk(flag: "paid" | "attended", value: boolean) {
+  function applyBulk(value: boolean) {
     const ids = selected.map((p) => p.id);
     if (ids.length === 0) return;
     setBulkMessage(null);
     startBulk(async () => {
-      const result = await setParticipantsFlag(eventId, ids, flag, value);
+      const result =
+        target === "paid" || target === "attended"
+          ? await setParticipantsFlag(eventId, ids, target, value)
+          : await setParticipantsCheck(eventId, ids, target, value);
       if (result?.error) {
         setBulkMessage({ ok: false, text: result.error });
         return;
       }
-      const what = flag === "paid" ? "납부" : "참석";
+      const what = target === "paid" ? "납부" : target === "attended" ? "참석" : `'${target}'`;
       setBulkMessage({ ok: true, text: `${ids.length}명을 ${what} ${value ? "체크" : "해제"}했어요.` });
       setSelectedIds(new Set());
     });
@@ -236,15 +250,15 @@ export function RosterTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+      <div className="flex flex-col gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="이름·학번 검색"
           aria-label="명단 검색"
-          className={`${inputClass} md:max-w-xs`}
+          className={inputClass}
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {(
             [
               ["all", `전체 ${participants.length}`],
@@ -257,7 +271,7 @@ export function RosterTable({
               type="button"
               onClick={() => setFilter(k)}
               aria-pressed={filter === k}
-              className={`h-10 rounded-full border px-4 text-sm ${
+              className={`h-9 whitespace-nowrap rounded-full border px-3.5 text-sm ${
                 filter === k
                   ? "border-blue-600 bg-blue-50 font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300"
                   : "border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
@@ -270,7 +284,7 @@ export function RosterTable({
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
             aria-label="정렬"
-            className="h-10 rounded-full border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="h-9 rounded-full border border-zinc-300 bg-white px-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           >
             <option value="added">추가한 순</option>
             <option value="name">이름순</option>
@@ -307,18 +321,26 @@ export function RosterTable({
             </p>
           </div>
           {selected.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <BulkButton onClick={() => applyBulk("paid", true)} disabled={isBulkPending} primary>
-                납부 체크
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={target}
+                onChange={(e) => setBulkTarget(e.target.value)}
+                aria-label="일괄 체크할 칸"
+                className="h-10 rounded-full border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                <option value="paid">납부</option>
+                <option value="attended">참석</option>
+                {checkColumns.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <BulkButton onClick={() => applyBulk(true)} disabled={isBulkPending} primary>
+                체크
               </BulkButton>
-              <BulkButton onClick={() => applyBulk("attended", true)} disabled={isBulkPending} primary>
-                참석 체크
-              </BulkButton>
-              <BulkButton onClick={() => applyBulk("paid", false)} disabled={isBulkPending}>
-                납부 해제
-              </BulkButton>
-              <BulkButton onClick={() => applyBulk("attended", false)} disabled={isBulkPending}>
-                참석 해제
+              <BulkButton onClick={() => applyBulk(false)} disabled={isBulkPending}>
+                해제
               </BulkButton>
               <button
                 type="button"
@@ -373,6 +395,16 @@ export function RosterTable({
               ))}
               <th className="px-3 py-2 text-center font-medium">납부</th>
               <th className="px-3 py-2 text-center font-medium">참석</th>
+              {checkColumns.map((c) => (
+                <th key={c} className="whitespace-nowrap px-3 py-2 text-center font-medium">
+                  <CheckColumnHeader eventId={eventId} name={c} canEdit={canEdit} />
+                </th>
+              ))}
+              {canEdit && (
+                <th className="px-3 py-2 font-medium">
+                  <AddCheckColumn eventId={eventId} />
+                </th>
+              )}
               {canEdit && <th className="px-3 py-2" aria-label="수정" />}
             </tr>
           </thead>
@@ -380,9 +412,11 @@ export function RosterTable({
             {rows.map((p) => (
               <RosterRowView
                 key={p.id}
+                eventId={eventId}
                 p={p}
                 kind={kind}
                 extraFields={extraFields}
+                checkColumns={checkColumns}
                 canEdit={canEdit}
                 selected={selectedIds.has(p.id)}
                 onSelect={() => toggleOne(p.id)}
@@ -423,7 +457,18 @@ function BulkButton({
   );
 }
 
-function FlagBox({ id, flag, value, label, disabled }: { id: string; flag: "paid" | "attended"; value: boolean; label: string; disabled: boolean }) {
+/** 명단 체크 칸 (누르면 바로 저장, 실패하면 되돌린다). 납부·참석·추가 항목 공용 */
+function FlagBox({
+  value,
+  label,
+  disabled,
+  onSave,
+}: {
+  value: boolean;
+  label: string;
+  disabled: boolean;
+  onSave: (next: boolean) => Promise<ActionError>;
+}) {
   const [isPending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useState(value);
   // 서버에서 새 값이 오면 따라간다
@@ -443,7 +488,7 @@ function FlagBox({ id, flag, value, label, disabled }: { id: string; flag: "paid
         const next = e.target.checked;
         setOptimistic(next);
         startTransition(async () => {
-          const result = await setParticipantFlag(id, flag, next);
+          const result = await onSave(next);
           if (result?.error) {
             setOptimistic(!next);
             alert(result.error);
@@ -455,16 +500,20 @@ function FlagBox({ id, flag, value, label, disabled }: { id: string; flag: "paid
 }
 
 function RosterRowView({
+  eventId,
   p,
   kind,
   extraFields,
+  checkColumns,
   canEdit,
   selected,
   onSelect,
 }: {
+  eventId: string;
   p: Participant;
   kind: EventKind;
   extraFields: string[];
+  checkColumns: string[];
   canEdit: boolean;
   selected: boolean;
   onSelect: () => void;
@@ -483,7 +532,7 @@ function RosterRowView({
   if (editing) {
     return (
       <tr className="bg-blue-50/40 dark:bg-blue-950/20">
-        <td colSpan={extraFields.length + 7} className="space-y-2 px-3 py-3">
+        <td colSpan={extraFields.length + checkColumns.length + 8} className="space-y-2 px-3 py-3">
           {error && <ErrorText>{error}</ErrorText>}
           <ParticipantFields kind={kind} extraFields={extraFields} value={value} onChange={setValue} />
           <div className="flex flex-wrap items-center gap-3">
@@ -547,7 +596,12 @@ function RosterRowView({
         </td>
       ))}
       <td className="px-3 py-2 text-center">
-        <FlagBox id={p.id} flag="paid" value={p.paid} label={`${p.name} 납부`} disabled={!canEdit} />
+        <FlagBox
+          value={p.paid}
+          label={`${p.name} 납부`}
+          disabled={!canEdit}
+          onSave={(next) => setParticipantFlag(p.id, "paid", next)}
+        />
         {p.dues_exempt ? (
           <span className="block whitespace-nowrap text-xs text-green-700 dark:text-green-300">학회비 면제</span>
         ) : p.paid_income_id ? (
@@ -555,8 +609,25 @@ function RosterRowView({
         ) : null}
       </td>
       <td className="px-3 py-2 text-center">
-        <FlagBox id={p.id} flag="attended" value={p.attended} label={`${p.name} 참석`} disabled={!canEdit} />
+        <FlagBox
+          value={p.attended}
+          label={`${p.name} 참석`}
+          disabled={!canEdit}
+          onSave={(next) => setParticipantFlag(p.id, "attended", next)}
+        />
       </td>
+      {checkColumns.map((c) => (
+        <td key={c} className="px-3 py-2 text-center">
+          <FlagBox
+            value={Boolean(p.checks?.[c])}
+            label={`${p.name} ${c}`}
+            disabled={!canEdit}
+            onSave={(next) => setParticipantsCheck(eventId, [p.id], c, next)}
+          />
+        </td>
+      ))}
+      {/* '+ 추가' 칸 자리 */}
+      {canEdit && <td />}
       {canEdit && (
         <td className="px-3 py-2 text-right">
           <button type="button" onClick={() => setEditing(true)} className="text-sm text-blue-600 underline-offset-4 hover:underline">
@@ -565,6 +636,103 @@ function RosterRowView({
         </td>
       )}
     </tr>
+  );
+}
+
+/** 표 머리글의 '+ 추가': 누르면 항목 이름 칸이 나오고, 저장하면 체크 칸이 생긴다 */
+function AddCheckColumn({ eventId }: { eventId: string }) {
+  const [isPending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="whitespace-nowrap rounded-full border border-dashed border-blue-300 px-2.5 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950"
+      >
+        + 추가
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="flex min-w-48 flex-col gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        startTransition(async () => {
+          const result = await addCheckColumn(eventId, name);
+          if (result?.error) setError(result.error);
+          else {
+            setName("");
+            setOpen(false);
+          }
+        });
+      }}
+    >
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        maxLength={20}
+        placeholder="예: 티셔츠 수령"
+        aria-label="추가할 체크 항목 이름"
+        className="h-9 w-full rounded-lg border border-zinc-300 bg-white px-2 text-sm font-normal text-zinc-900 outline-none focus:border-blue-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={isPending || !name.trim()}
+          className="h-8 rounded-full bg-blue-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {isPending ? "추가 중…" : "추가"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setName("");
+            setError(null);
+          }}
+          className="text-sm font-normal text-zinc-500"
+        >
+          취소
+        </button>
+      </div>
+      {error && <span className="text-xs font-normal text-red-600">{error}</span>}
+    </form>
+  );
+}
+
+/** 추가한 항목의 머리글: 이름 + (권한이 있으면) 지우기 */
+function CheckColumnHeader({ eventId, name, canEdit }: { eventId: string; name: string; canEdit: boolean }) {
+  const [isPending, startTransition] = useTransition();
+  return (
+    <span className="inline-flex items-center gap-1">
+      {name}
+      {canEdit && (
+        <button
+          type="button"
+          disabled={isPending}
+          aria-label={`'${name}' 항목 지우기`}
+          title="항목 지우기"
+          onClick={() => {
+            if (!confirm(`'${name}' 항목을 지울까요? 이 칸에 체크한 내용도 함께 지워져요.`)) return;
+            startTransition(async () => {
+              const result = await removeCheckColumn(eventId, name);
+              if (result?.error) alert(result.error);
+            });
+          }}
+          className="rounded-full px-1 text-zinc-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950"
+        >
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -706,7 +874,17 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
 }
 
 /** 명단을 엑셀로 내려받기 (출석부 인쇄, 과잠 업체 주문용) */
-export function ExportRoster({ eventName, extraFields, participants }: { eventName: string; extraFields: string[]; participants: Participant[] }) {
+export function ExportRoster({
+  eventName,
+  extraFields,
+  checkColumns,
+  participants,
+}: {
+  eventName: string;
+  extraFields: string[];
+  checkColumns: string[];
+  participants: Participant[];
+}) {
   const [isPending, startTransition] = useTransition();
   return (
     <button
@@ -715,15 +893,16 @@ export function ExportRoster({ eventName, extraFields, participants }: { eventNa
       onClick={() =>
         startTransition(async () => {
           const XLSX = await import("xlsx");
-          const header = ["번호", "이름", "학번", "학년", ...extraFields, "납부", "참석", "메모"];
+          const header = ["번호", "이름", "학번", "학년", ...extraFields, "납부", "참석", ...checkColumns, "메모"];
           const body = participants.map((p, i) => [
             i + 1,
             p.name,
             p.student_no,
             p.grade ?? "",
             ...extraFields.map((f) => p.fields[f] ?? ""),
-            p.paid ? "O" : "",
+            p.paid ? (p.dues_exempt ? "O(학회비)" : "O") : "",
             p.attended ? "O" : "",
+            ...checkColumns.map((c) => (p.checks?.[c] ? "O" : "")),
             p.memo,
           ]);
           const sheet = XLSX.utils.aoa_to_sheet([[`${eventName} 명단`], [], header, ...body]);

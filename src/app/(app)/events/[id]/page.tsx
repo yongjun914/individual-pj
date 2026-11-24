@@ -47,6 +47,7 @@ type EventDetail = {
   capacity: number | null;
   form_url: string;
   extra_fields: string[];
+  check_columns: string[];
   memo: string;
   income_id: string | null;
   terms: { name: string; is_active: boolean; organizations: { name: string } };
@@ -87,7 +88,7 @@ async function EventContent({
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, term_id, category_id, kind, name, starts_on, ends_on, place, fee, capacity, form_url, extra_fields, memo, income_id, terms!inner(name, is_active, organizations!inner(name))",
+      "id, term_id, category_id, kind, name, starts_on, ends_on, place, fee, capacity, form_url, extra_fields, check_columns, memo, income_id, terms!inner(name, is_active, organizations!inner(name))",
     )
     .eq("id", id)
     .is("deleted_at", null)
@@ -99,7 +100,7 @@ async function EventContent({
     supabase.from("memberships").select("role, revoked_permissions").eq("term_id", event.term_id).eq("user_id", userId).maybeSingle(),
     supabase
       .from("event_participants")
-      .select("id, name, student_no, grade, paid, attended, fields, memo, dues_exempt, paid_income_id")
+      .select("id, name, student_no, grade, paid, attended, fields, memo, dues_exempt, paid_income_id, checks")
       .eq("event_id", id)
       .order("created_at")
       .overrideTypes<Participant[], { merge: false }>(),
@@ -190,9 +191,16 @@ function RosterTab({ event, participants, canEdit }: { event: EventDetail; parti
         )}
         <Card
           title={`명단 (${participants.length}명)`}
-          actions={<ExportRoster eventName={event.name} extraFields={event.extra_fields} participants={participants} />}
+          actions={<ExportRoster eventName={event.name} extraFields={event.extra_fields} checkColumns={event.check_columns} participants={participants} />}
         >
-          <RosterTable eventId={event.id} kind={event.kind} extraFields={event.extra_fields} participants={participants} canEdit={canEdit} />
+          <RosterTable
+            eventId={event.id}
+            kind={event.kind}
+            extraFields={event.extra_fields}
+            checkColumns={event.check_columns}
+            participants={participants}
+            canEdit={canEdit}
+          />
         </Card>
       </div>
       <div className="space-y-6 lg:sticky lg:top-24">

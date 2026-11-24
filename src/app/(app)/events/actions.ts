@@ -431,3 +431,73 @@ export async function assignDeposit(incomeId: string, participantId: string): Pr
   refresh();
   return null;
 }
+
+// ---------------------------------------------------------------------
+// 체크 항목 추가 (납부·참석 말고 '티셔츠 수령' 같은 칸)
+// ---------------------------------------------------------------------
+
+const RESERVED_CHECKS = ["납부", "참석"];
+const MAX_CHECK_COLUMNS = 10;
+
+/** 행사에 체크 항목을 하나 더한다 */
+export async function addCheckColumn(eventId: string, name: string): Promise<ActionError> {
+  const column = name.replace(/\s+/g, " ").trim();
+  if (!UUID.test(eventId)) return { error: "잘못된 요청입니다." };
+  if (!column || column.length > 20) return { error: "항목 이름을 1~20자로 써 주세요." };
+  if (RESERVED_CHECKS.includes(column)) return { error: "납부·참석은 이미 있는 칸이에요." };
+
+  await requireUserId("/events");
+  const supabase = await createClient();
+  const { data: event } = await supabase.from("events").select("check_columns, extra_fields").eq("id", eventId).maybeSingle();
+  if (!event) return { error: "행사를 찾을 수 없어요." };
+  const columns = (event.check_columns ?? []) as string[];
+  if (columns.includes(column) || ((event.extra_fields ?? []) as string[]).includes(column)) {
+    return { error: "같은 이름의 칸이 이미 있어요." };
+  }
+  if (columns.length >= MAX_CHECK_COLUMNS) return { error: `체크 항목은 ${MAX_CHECK_COLUMNS}개까지 만들 수 있어요.` };
+
+  const { data, error } = await supabase
+    .from("events")
+    .update({ check_columns: [...columns, column] })
+    .eq("id", eventId)
+    .select("id");
+  if (error) console.error("체크 항목 추가 실패", error);
+  if (error || !data || data.length === 0) return { error: NO_PERMISSION };
+  refresh();
+  return null;
+}
+
+/** 체크 항목을 지운다 (사람마다 저장된 체크 값도 함께 지워진다) */
+export async function removeCheckColumn(eventId: string, name: string): Promise<ActionError> {
+  if (!UUID.test(eventId) || !name) return { error: "잘못된 요청입니다." };
+  await requireUserId("/events");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("remove_check_column", { p_event_id: eventId, p_key: name });
+  if (error) console.error("체크 항목 삭제 실패", error);
+  if (error || data !== true) return { error: NO_PERMISSION };
+  refresh();
+  return null;
+}
+
+/** 추가 항목 체크·해제 (한 명 또는 고른 여러 명) */
+export async function setParticipantsCheck(eventId: string, participantIds: string[], name: string, value: boolean): Promise<ActionError> {
+  const ids = [...new Set(participantIds)];
+  if (!UUID.test(eventId) || !name || ids.length === 0 || ids.length > 1000 || !ids.every((id) => UUID.test(id))) {
+    return { error: "잘못된 요청입니다." };
+  }
+  await requireUserId("/events");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("set_participants_check", {
+    p_event_id: eventId,
+    p_ids: ids,
+    p_key: name,
+    p_value: value,
+  });
+  if (error) {
+    console.error("추가 항목 체크 실패", error);
+    return { error: /[가-힣]/.test(error.message) ? error.message : NO_PERMISSION };
+  }
+  if (!data) return { error: NO_PERMISSION };
+  refresh();
+  return null;
+}

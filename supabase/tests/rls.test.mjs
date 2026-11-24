@@ -529,6 +529,30 @@ const incJ = await deposit("정과잠", 60000);
 check("과잠은 참가비×수량과 맞으면 납부 체크",
   (await db.query(`select paid_income_id from public.event_participants where event_id = $1`, [evJ])).rows[0].paid_income_id === incJ);
 
+// --- 행사 명단의 체크 항목 추가 (이 시점: term2에는 A만, evC는 종강총회)
+check("학회장은 체크 항목 추가",
+  (await as(A, `update public.events set check_columns = array_append(check_columns, '티셔츠 수령') where id = $1 returning id`, [evC])).rows.length === 1);
+const twoIds = (await db.query(`select id from public.event_participants where event_id = $1 order by created_at limit 2`, [evC])).rows.map((r) => r.id);
+check("고른 사람들의 추가 항목을 한꺼번에 체크",
+  (await as(A, `select public.set_participants_check($1, $2::uuid[], '티셔츠 수령', true) as n`, [evC, twoIds])).rows[0].n === 2
+  && (await db.query(`select count(*)::int as n from public.event_participants where event_id = $1 and (checks->>'티셔츠 수령')::boolean`, [evC])).rows[0].n === 2);
+check("체크 해제도 됨",
+  (await as(A, `select public.set_participants_check($1, $2::uuid[], '티셔츠 수령', false) as n`, [evC, [twoIds[0]]])).rows[0].n === 1
+  && (await db.query(`select checks->>'티셔츠 수령' as v from public.event_participants where id = $1`, [twoIds[0]])).rows[0].v === "false");
+await expectError("없는 항목은 체크 불가",
+  () => as(A, `select public.set_participants_check($1, $2::uuid[], '없는 칸', true)`, [evC, twoIds]), /없는 체크 항목/);
+await expectError("외부인은 행사가 안 보여서 체크 불가",
+  () => as(C, `select public.set_participants_check($1, $2::uuid[], '티셔츠 수령', true)`, [evC, twoIds]), /없는 체크 항목/);
+check("외부인은 항목 추가 불가",
+  (await as(C, `update public.events set check_columns = array['몰래'] where id = $1 returning id`, [evC])).rows.length === 0);
+check("외부인은 항목 삭제 불가", (await as(C, `select public.remove_check_column($1, '티셔츠 수령') as ok`, [evC])).rows[0].ok === false);
+await expectError("체크 항목은 10개까지",
+  () => as(A, `update public.events set check_columns = array['1','2','3','4','5','6','7','8','9','10','11'] where id = $1`, [evC]), /check/);
+check("항목을 지우면 사람마다 저장된 값도 지워짐",
+  (await as(A, `select public.remove_check_column($1, '티셔츠 수령') as ok`, [evC])).rows[0].ok === true
+  && (await db.query(`select count(*)::int as n from public.event_participants where event_id = $1 and checks ? '티셔츠 수령'`, [evC])).rows[0].n === 0
+  && (await db.query(`select cardinality(check_columns) as n from public.events where id = $1`, [evC])).rows[0].n === 0);
+
 // --- 학생회 찾기 · 참여 요청 (이 시점: term2에는 A만, B·C는 멤버 아님)
 const found = (await as(C, `select * from public.search_organizations('컴퓨터공학')`)).rows;
 check("외부인도 이름으로 학생회를 찾음", found.length === 1 && found[0].organization_id === orgId && found[0].requested === false);
