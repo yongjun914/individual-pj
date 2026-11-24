@@ -529,6 +529,53 @@ const incJ = await deposit("정과잠", 60000);
 check("과잠은 참가비×수량과 맞으면 납부 체크",
   (await db.query(`select paid_income_id from public.event_participants where event_id = $1`, [evJ])).rows[0].paid_income_id === incJ);
 
+// --- 학생회 찾기 · 참여 요청 (이 시점: term2에는 A만, B·C는 멤버 아님)
+const found = (await as(C, `select * from public.search_organizations('컴퓨터공학')`)).rows;
+check("외부인도 이름으로 학생회를 찾음", found.length === 1 && found[0].organization_id === orgId && found[0].requested === false);
+check("학교 이름으로도 찾음", (await as(C, `select * from public.search_organizations('천안대')`)).rows.length >= 1);
+check("검색어가 너무 짧으면 빈 결과", (await as(C, `select * from public.search_organizations('컴')`)).rows.length === 0);
+check("이미 멤버인 학생회는 검색에 안 나옴",
+  (await as(A, `select * from public.search_organizations('컴퓨터공학')`)).rows.length === 0);
+check("%·_ 같은 기호는 글자 그대로 찾음", (await as(C, `select * from public.search_organizations('%%')`)).rows.length === 0);
+check("외부인은 여전히 학생회 표를 직접 못 봄", (await as(C, `select * from public.organizations`)).rows.length === 0);
+
+const jrC = (await as(C, `select public.request_join($1, '전자공 25학번 홍길동입니다') as id`, [orgId])).rows[0].id;
+const jrC2 = (await as(C, `select public.request_join($1, '다시 보냅니다') as id`, [orgId])).rows[0].id;
+check("다시 요청하면 같은 요청의 메시지만 바뀜", jrC === jrC2
+  && (await db.query(`select count(*)::int as n from public.join_requests where user_id = $1 and status = 'pending'`, [C])).rows[0].n === 1);
+check("요청하면 검색 결과에 '요청함'으로 표시", (await as(C, `select requested from public.search_organizations('컴퓨터공학')`)).rows[0].requested === true);
+const mine = (await as(C, `select * from public.my_join_requests()`)).rows;
+check("내 요청은 학생회 이름과 함께 보임", mine.length === 1 && mine[0].name === "컴퓨터공학과 학생회" && mine[0].status === "pending");
+const jrB = (await as(B, `select public.request_join($1) as id`, [orgId])).rows[0].id;
+const incoming = (await as(A, `select * from public.term_join_requests($1)`, [term2])).rows;
+check("학회장은 받은 요청을 이름과 함께 봄", incoming.length === 2 && incoming.some((r) => r.display_name === "이부원"));
+check("요청한 사람은 학회장용 요청 목록을 못 봄", (await as(C, `select * from public.term_join_requests($1)`, [term2])).rows.length === 0);
+check("남의 요청은 못 봄", (await as(B, `select id from public.join_requests`)).rows.length === 1);
+await expectError("요청한 사람이 스스로 승인 불가",
+  () => as(C, `select public.decide_join_request($1, true)`, [jrC]), /학회장·부학회장만/);
+await expectError("요청 직접 수정 불가", async () => {
+  const r = await as(C, `update public.join_requests set status = 'approved' where id = $1 returning id`, [jrC]);
+  if (r.rows.length === 0) throw new Error("0 rows");
+});
+await as(A, `select public.decide_join_request($1, true, 'officer')`, [jrC]);
+check("승인하면 고른 역할로 멤버가 됨",
+  (await db.query(`select role from public.memberships where term_id = $1 and user_id = $2`, [term2, C])).rows[0]?.role === "officer");
+check("멤버가 되면 학생회를 볼 수 있음", (await as(C, `select * from public.organizations where id = $1`, [orgId])).rows.length === 1);
+await expectError("처리된 요청은 다시 처리 불가", () => as(A, `select public.decide_join_request($1, false)`, [jrC]), /이미 처리/);
+await expectError("이미 멤버면 요청 불가", () => as(C, `select public.request_join($1)`, [orgId]), /이미 이 학생회/);
+await as(A, `select public.decide_join_request($1, false)`, [jrB]);
+check("거절하면 멤버가 아님",
+  (await db.query(`select count(*)::int as n from public.memberships where term_id = $1 and user_id = $2`, [term2, B])).rows[0].n === 0
+  && (await db.query(`select status from public.join_requests where id = $1`, [jrB])).rows[0].status === "rejected");
+const jrB2 = (await as(B, `select public.request_join($1) as id`, [orgId])).rows[0].id;
+check("거절된 뒤 다시 요청할 수 있음", jrB2 !== jrB);
+await expectError("남의 요청은 취소 불가", () => as(C, `select public.cancel_join_request($1)`, [jrB2]), /취소할 수 있는/);
+await as(B, `select public.cancel_join_request($1)`, [jrB2]);
+check("본인은 요청 취소", (await db.query(`select status from public.join_requests where id = $1`, [jrB2])).rows[0].status === "cancelled");
+
+// 정리: C는 term2에서 내보낸다
+await as(A, `delete from public.memberships where term_id = $1 and user_id = $2`, [term2, C]);
+
 // --- 회원 탈퇴 (이 시점: A는 term2의 유일한 총무, B는 term2에서 나간 상태)
 const D = "00000000-0000-0000-0000-00000000000d";
 await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, '{"name":"박혼자"}')`, [D]);

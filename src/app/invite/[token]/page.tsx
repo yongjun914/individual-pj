@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { roleLabel } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
+import { termLabel } from "@/lib/terms";
 
 import { acceptInvitation } from "./actions";
 
@@ -41,7 +42,7 @@ async function InviteContent({ params, searchParams }: PageProps<"/invite/[token
       <div className="space-y-4 text-center">
         <h1 className="text-xl font-semibold">초대 링크를 쓸 수 없어요</h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          링크가 만료되었거나 폐기되었어요. 총무나 회장에게 새 링크를 요청해 주세요.
+          링크가 만료되었거나 폐기되었어요. 학회장·부학회장에게 새 링크를 요청해 주세요.
         </p>
         <Link href="/" className="inline-block text-sm text-blue-600 underline-offset-4 hover:underline">
           홈으로
@@ -56,7 +57,7 @@ async function InviteContent({ params, searchParams }: PageProps<"/invite/[token
         <p className="text-sm text-zinc-500">{invite.school_name}</p>
         <h1 className="text-2xl font-semibold">{invite.organization_name}</h1>
         <p className="text-zinc-600 dark:text-zinc-400">
-          {invite.term_name}에 <strong className="font-semibold">{roleLabel(invite.role)}</strong>
+          {termLabel(invite.term_name)} 멤버로, 역할은 <strong className="font-semibold">{roleLabel(invite.role)}</strong>
           (으)로 초대받았어요.
         </p>
       </div>

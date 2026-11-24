@@ -35,7 +35,7 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** 상단 바: 로고, PC 메뉴, 지출 등록 버튼, 사용자 메뉴 (휴대폰에서는 로고와 메뉴 버튼만) */
+/** 상단 바: 로고, PC 메뉴, 사용자 메뉴 (휴대폰에서는 로고와 메뉴 버튼만) */
 export function TopBar({ user }: { user: NavUser | null }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter(
@@ -90,13 +90,6 @@ export function TopBar({ user }: { user: NavUser | null }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Link
-            href="/expenses/new"
-            className="hidden h-10 shrink-0 items-center whitespace-nowrap rounded-full btn-glow bg-linear-to-r from-blue-500 to-blue-600 px-5 font-medium text-white hover:to-blue-700 md:inline-flex"
-          >
-            + 지출 등록
-          </Link>
-
           {user && (
             <div ref={menuRef} className="relative hidden lg:block">
               <button

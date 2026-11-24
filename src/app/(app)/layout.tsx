@@ -34,16 +34,24 @@ async function TopBarWithUser() {
     supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle(),
   ]);
 
-  // 학회장·부학회장에게는 처리할 직책 변경 요청 수를 메뉴에 보여 준다
+  // 학회장·부학회장에게는 처리할 요청 수(직책 변경 + 참여 요청)를 메뉴에 보여 준다
   const managedTermIds = memberships.filter((m) => isManagerRole(m.role)).map((m) => m.terms.id);
-  const { count: pendingRequests } =
+  const [{ count: roleRequests }, { count: joinRequests }] =
     managedTermIds.length > 0
-      ? await supabase
-          .from("role_change_requests")
-          .select("id", { count: "exact", head: true })
-          .in("term_id", managedTermIds)
-          .eq("status", "pending")
-      : { count: 0 };
+      ? await Promise.all([
+          supabase
+            .from("role_change_requests")
+            .select("id", { count: "exact", head: true })
+            .in("term_id", managedTermIds)
+            .eq("status", "pending"),
+          supabase
+            .from("join_requests")
+            .select("id", { count: "exact", head: true })
+            .in("term_id", managedTermIds)
+            .eq("status", "pending"),
+        ])
+      : [{ count: 0 }, { count: 0 }];
+  const pendingRequests = (roleRequests ?? 0) + (joinRequests ?? 0);
 
   const first = memberships[0];
   const user: NavUser = {
@@ -52,7 +60,7 @@ async function TopBarWithUser() {
       ? `${first.terms.organizations.name} · ${first.position || roleLabel(first.role)}`
       : null,
     isAdmin: memberships.some((m) => isManagerRole(m.role)),
-    pendingRequests: pendingRequests ?? 0,
+    pendingRequests,
     canAudit: canAny(memberships, "audit"),
     canSettings: canAny(memberships, "settings"),
   };

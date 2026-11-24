@@ -13,7 +13,7 @@ import { termLabel, termOrgLabel } from "@/lib/terms";
 
 import { InviteCreator, InviteRow, MemberAccessRow, StartTermForm } from "../settings/controls";
 
-import { RoleRequestRow, type PendingRequest } from "./role-requests";
+import { JoinRequestRow, RoleRequestRow, type JoinRequestItem, type PendingRequest } from "./role-requests";
 
 export const metadata: Metadata = { title: "학생회원 관리" };
 
@@ -91,6 +91,12 @@ async function MembersContent({ searchParams }: { searchParams: PageProps<"/memb
       .overrideTypes<RoleRequest[], { merge: false }>(),
   ]);
 
+  // 사이트 주소로 들어와 참여를 요청한 사람 (아직 멤버가 아니라 이름은 함수로 받는다)
+  const { data: joinRows } = await supabase.rpc("term_join_requests", { p_term_id: term.id });
+  const joinRequests: JoinRequestItem[] = ((joinRows ?? []) as { id: string; display_name: string; message: string; created_at: string }[]).map(
+    (r) => ({ id: r.id, name: r.display_name, message: r.message, requestedAt: formatDateTime(r.created_at) }),
+  );
+
   const memberIds = (members ?? []).map((m) => m.user_id);
   const { data: profiles } =
     memberIds.length > 0 ? await supabase.from("profiles").select("id, display_name").in("id", memberIds) : { data: [] };
@@ -129,6 +135,18 @@ async function MembersContent({ searchParams }: { searchParams: PageProps<"/memb
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-6">
+          {joinRequests.length > 0 && (
+            <Card
+              title={`참여 요청 (${joinRequests.length}건)`}
+              description="초대 링크 없이 사이트에서 우리 학생회를 찾아 참여를 요청한 사람이에요. 역할을 골라 승인하면 바로 멤버가 돼요."
+            >
+              <ul className="space-y-3">
+                {joinRequests.map((r) => (
+                  <JoinRequestRow key={r.id} request={r} />
+                ))}
+              </ul>
+            </Card>
+          )}
           {pending.length > 0 && (
             <Card title={`직책 변경 요청 (${pending.length}건)`} description="승인하면 역할·직책이 바로 바뀌어요.">
               <ul className="space-y-3">

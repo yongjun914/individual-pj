@@ -1,23 +1,26 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
-import { summarizeByTerm, type SummaryRow } from "@/lib/expenses";
 import { getActiveMemberships } from "@/lib/memberships";
-import { can } from "@/lib/permissions";
-import { isManagerRole } from "@/lib/roles";
+import { roleLabel } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
-import { HomeView, type GuideState, type RecentExpense } from "./home-view";
+/** 학교별 로고 (없으면 글자만 보여 준다) */
+function schoolLogo(schoolName: string) {
+  if (schoolName.includes("상명")) return { src: "/logos/sangmyung.jpg", alt: "상명대학교 로고", width: 1488, height: 2000 };
+  return null;
+}
 
+/** 홈: 학교 로고와 학생회 이름, 내 이름·직책만 깔끔하게 보여 준다. 기능은 상단 메뉴에서. */
 export default function Home() {
   return (
-    <Page>
+    <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <HomeContent />
       </Suspense>
-    </Page>
+    </main>
   );
 }
 
@@ -30,70 +33,33 @@ async function HomeContent() {
     supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle(),
   ]);
 
-  // 속한 학생회가 없으면 학생회 만들기로
+  // 속한 학생회가 없으면 학생회 만들기·참여 요청으로
   if (memberships.length === 0) redirect("/onboarding");
 
-  const termIds = memberships.map((m) => m.terms.id);
   const primary = memberships[0];
-
-  const [{ data: recent }, { data: summaryRows }, { data: incomeRows }, { count: memberCount }, { count: tokenCount }] =
-    await Promise.all([
-      supabase
-        .from("expenses")
-        .select("id, spent_on, merchant, amount, status, categories(name)")
-        .in("term_id", termIds)
-        .is("deleted_at", null)
-        .order("spent_on", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(8)
-        .overrideTypes<RecentExpense[], { merge: false }>(),
-      supabase
-        .from("expenses")
-        .select("term_id, amount, status")
-        .in("term_id", termIds)
-        .is("deleted_at", null)
-        .overrideTypes<SummaryRow[], { merge: false }>(),
-      supabase.from("incomes").select("term_id, amount").in("term_id", termIds).is("deleted_at", null),
-      supabase.from("memberships").select("id", { count: "exact", head: true }).eq("term_id", primary.terms.id),
-      // 결제 연동 권한이 있어야 결과가 나온다 (RLS)
-      supabase
-        .from("webhook_tokens")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", primary.terms.organizations.id)
-        .is("revoked_at", null),
-    ]);
-
-  const summary = summarizeByTerm(summaryRows ?? []);
-  const incomeTotals: Record<string, number> = {};
-  for (const r of incomeRows ?? []) {
-    incomeTotals[r.term_id as string] = (incomeTotals[r.term_id as string] ?? 0) + Number(r.amount);
-  }
-  const needsReceipt = (summaryRows ?? []).filter((r) => r.status === "needs_receipt").length;
-
-  // 시작 가이드: 대표 학생회(첫 번째) 기준
-  const primaryRows = (summaryRows ?? []).filter((r) => r.term_id === primary.terms.id);
-  const guide: GuideState = {
-    canIncome: can(primary, "incomes"),
-    canAudit: can(primary, "audit"),
-    canPayments: can(primary, "payments"),
-    canSettings: can(primary, "settings"),
-    isAdmin: isManagerRole(primary.role),
-    hasIncome: (incomeRows ?? []).some((r) => r.term_id === primary.terms.id),
-    hasExpense: primaryRows.length > 0,
-    receiptsDone: primaryRows.length > 0 && primaryRows.every((r) => r.status !== "needs_receipt"),
-    hasMembers: (memberCount ?? 0) > 1,
-    hasPaymentLink: (tokenCount ?? 0) > 0,
-  };
+  const org = primary.terms.organizations;
+  const logo = schoolLogo(org.school_name);
+  const position = primary.position || roleLabel(primary.role);
 
   return (
-    <HomeView
-      displayName={profile?.display_name || null}
-      memberships={memberships}
-      summary={summary}
-      incomeTotals={incomeTotals}
-      recent={recent ?? []}
-      needsReceipt={needsReceipt}
-      guide={guide}
-    />
+    <div className="flex flex-col items-center gap-8 text-center">
+      {logo && (
+        <Image
+          src={logo.src}
+          alt={logo.alt}
+          width={logo.width}
+          height={logo.height}
+          priority
+          className="h-auto w-28 rounded-xl shadow-[0_18px_40px_-20px_rgb(11_77_151/0.6)] md:w-36"
+        />
+      )}
+      <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
+        {org.school_name} {org.name}
+      </h1>
+      <div className="space-y-1">
+        <p className="text-xl font-semibold md:text-2xl">{profile?.display_name || "이름 없음"}</p>
+        <p className="text-lg text-zinc-500">{position}</p>
+      </div>
+    </div>
   );
 }

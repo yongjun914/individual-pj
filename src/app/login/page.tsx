@@ -49,6 +49,11 @@ async function LoginForm({ searchParams }: Pick<PageProps<"/login">, "searchPara
           탈퇴가 완료됐어요. 그동안 이용해 주셔서 고마워요.
         </p>
       )}
+      {next.startsWith("/invite/") && (
+        <p role="status" className="rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+          학생회 초대를 받으셨네요. 카카오로 로그인하면 초대 화면으로 돌아가서 바로 참여할 수 있어요.
+        </p>
+      )}
       {errorMessage && (
         <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {errorMessage}

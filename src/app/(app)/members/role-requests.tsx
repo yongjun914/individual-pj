@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 
 import { ROLE_LABELS, ROLE_OPTIONS, roleLabel, type MemberRole } from "@/lib/roles";
 
-import { cancelRoleRequest, decideRoleRequest, requestRoleChange, type RequestActionError } from "./actions";
+import { cancelRoleRequest, decideJoinRequest, decideRoleRequest, requestRoleChange, type RequestActionError } from "./actions";
 
 const inputClass =
   "h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-900";
@@ -197,5 +197,53 @@ export function MyRoleRequest({
       </div>
       {error && <ErrorText>{error}</ErrorText>}
     </form>
+  );
+}
+
+// ---------------------------------------------------------------------
+// 학생회원 관리: 참여 요청 승인·거절
+// ---------------------------------------------------------------------
+
+export type JoinRequestItem = { id: string; name: string; message: string; requestedAt: string };
+
+export function JoinRequestRow({ request }: { request: JoinRequestItem }) {
+  const { isPending, error, run } = useRun();
+  const [role, setRole] = useState<MemberRole>("member");
+  return (
+    <li className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-lg font-semibold">{request.name}</p>
+        <p className="text-sm text-zinc-500">{request.requestedAt}</p>
+      </div>
+      {request.message && <p className="rounded-lg bg-white px-3 py-2 text-sm dark:bg-zinc-900">“{request.message}”</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as MemberRole)}
+          aria-label={`${request.name} 역할`}
+          className="h-11 rounded-xl border border-zinc-300 bg-white px-3 dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {ROLE_OPTIONS.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r]}(으)로
+            </option>
+          ))}
+        </select>
+        <button type="button" disabled={isPending} className={primaryButton} onClick={() => run(() => decideJoinRequest(request.id, true, role))}>
+          {isPending ? "처리하는 중…" : "승인"}
+        </button>
+        <button
+          type="button"
+          disabled={isPending}
+          className={secondaryButton}
+          onClick={() => {
+            if (confirm(`${request.name}님의 참여 요청을 거절할까요?`)) run(() => decideJoinRequest(request.id, false, role));
+          }}
+        >
+          거절
+        </button>
+      </div>
+      {error && <ErrorText>{error}</ErrorText>}
+    </li>
   );
 }

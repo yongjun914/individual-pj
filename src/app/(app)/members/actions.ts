@@ -58,3 +58,17 @@ export async function decideRoleRequest(requestId: string, approve: boolean): Pr
   refresh();
   return null;
 }
+
+/** 학회장·부학회장: 참여 요청을 승인하면 고른 역할로 멤버가 된다 */
+export async function decideJoinRequest(requestId: string, approve: boolean, role: string): Promise<RequestActionError> {
+  if (!UUID.test(requestId) || !ROLE_OPTIONS.includes(role as MemberRole)) return { error: "잘못된 요청입니다." };
+  await requireUserId("/members");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("decide_join_request", { p_request_id: requestId, p_approve: approve, p_role: role });
+  if (error) {
+    console.error("참여 요청 처리 실패", error);
+    return { error: friendly(error, "요청을 처리하지 못했어요.") };
+  }
+  refresh();
+  return null;
+}
