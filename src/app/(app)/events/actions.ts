@@ -444,7 +444,8 @@ export async function addCheckColumn(eventId: string, name: string): Promise<Act
   const column = name.replace(/\s+/g, " ").trim();
   if (!UUID.test(eventId)) return { error: "잘못된 요청입니다." };
   if (!column || column.length > 20) return { error: "항목 이름을 1~20자로 써 주세요." };
-  if (RESERVED_CHECKS.includes(column)) return { error: "납부·참석은 이미 있는 칸이에요." };
+  // '납부'·'참석'을 쓰면 숨겨 둔 기본 칸을 다시 보이게 한다
+  if (RESERVED_CHECKS.includes(column)) return setBuiltinCheckHidden(eventId, column === "납부" ? "paid" : "attended", false);
 
   await requireUserId("/events");
   const supabase = await createClient();
@@ -498,6 +499,29 @@ export async function setParticipantsCheck(eventId: string, participantIds: stri
     return { error: /[가-힣]/.test(error.message) ? error.message : NO_PERMISSION };
   }
   if (!data) return { error: NO_PERMISSION };
+  refresh();
+  return null;
+}
+
+export type BuiltinCheck = "paid" | "attended";
+
+/**
+ * 기본 칸(납부·참석) 숨기기 / 다시 보이기.
+ * 체크해 둔 값은 지우지 않으니 다시 보이게 하면 그대로 돌아온다.
+ */
+export async function setBuiltinCheckHidden(eventId: string, key: BuiltinCheck, hidden: boolean): Promise<ActionError> {
+  if (!UUID.test(eventId) || (key !== "paid" && key !== "attended")) return { error: "잘못된 요청입니다." };
+  await requireUserId("/events");
+  const supabase = await createClient();
+  const { data: event } = await supabase.from("events").select("hidden_checks").eq("id", eventId).maybeSingle();
+  if (!event) return { error: "행사를 찾을 수 없어요." };
+  const current = (event.hidden_checks ?? []) as string[];
+  if (!hidden && !current.includes(key)) return { error: `${key === "paid" ? "납부" : "참석"}은 이미 있는 칸이에요.` };
+  const next = hidden ? [...new Set([...current, key])] : current.filter((k) => k !== key);
+
+  const { data, error } = await supabase.from("events").update({ hidden_checks: next }).eq("id", eventId).select("id");
+  if (error) console.error("기본 칸 숨기기 실패", error);
+  if (error || !data || data.length === 0) return { error: NO_PERMISSION };
   refresh();
   return null;
 }

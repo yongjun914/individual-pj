@@ -17,8 +17,10 @@ import {
   setParticipantFlag,
   setParticipantsFlag,
   setParticipantsCheck,
+  setBuiltinCheckHidden,
   updateParticipant,
   type ActionError,
+  type BuiltinCheck,
   type ParticipantInput,
 } from "../actions";
 
@@ -162,6 +164,7 @@ export function RosterTable({
   kind,
   extraFields,
   checkColumns,
+  hiddenChecks,
   participants,
   canEdit,
 }: {
@@ -169,19 +172,31 @@ export function RosterTable({
   kind: EventKind;
   extraFields: string[];
   checkColumns: string[];
+  /** 이 행사에서 숨긴 기본 칸 ("paid", "attended") */
+  hiddenChecks: string[];
   participants: Participant[];
   canEdit: boolean;
 }) {
+  const showPaid = !hiddenChecks.includes("paid");
+  const showAttended = !hiddenChecks.includes("attended");
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filterChoice, setFilter] = useState<Filter>("all");
+  // 숨긴 칸의 필터(미납·미참석)는 쓰지 않는다
+  const filter: Filter =
+    (filterChoice === "unpaid" && !showPaid) || (filterChoice === "absent" && !showAttended) ? "all" : filterChoice;
   const [sort, setSort] = useState<"added" | "name" | "student">("added");
   // 일괄 체크할 사람 (명단에서 빠진 사람은 자동으로 제외)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkPending, startBulk] = useTransition();
   const [bulkMessage, setBulkMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // 일괄 체크할 칸: 납부·참석 또는 추가한 항목
+  const bulkTargets = [
+    ...(showPaid ? [{ value: "paid", label: "납부" }] : []),
+    ...(showAttended ? [{ value: "attended", label: "참석" }] : []),
+    ...checkColumns.map((c) => ({ value: c, label: c })),
+  ];
   const [bulkTarget, setBulkTarget] = useState<string>("paid");
-  const target = bulkTarget === "paid" || bulkTarget === "attended" || checkColumns.includes(bulkTarget) ? bulkTarget : "paid";
+  const target = bulkTargets.some((t) => t.value === bulkTarget) ? bulkTarget : (bulkTargets[0]?.value ?? "");
 
   const rows = useMemo(() => {
     const q = query.trim();
@@ -262,8 +277,8 @@ export function RosterTable({
           {(
             [
               ["all", `전체 ${participants.length}`],
-              ["unpaid", `미납 ${participants.filter((p) => !p.paid).length}`],
-              ["absent", `미참석 ${participants.filter((p) => !p.attended).length}`],
+              ...(showPaid ? [["unpaid", `미납 ${participants.filter((p) => !p.paid).length}`]] : []),
+              ...(showAttended ? [["absent", `미참석 ${participants.filter((p) => !p.attended).length}`]] : []),
             ] as [Filter, string][]
           ).map(([k, label]) => (
             <button
@@ -328,18 +343,16 @@ export function RosterTable({
                 aria-label="일괄 체크할 칸"
                 className="h-10 rounded-full border border-zinc-300 bg-white px-3 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               >
-                <option value="paid">납부</option>
-                <option value="attended">참석</option>
-                {checkColumns.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {bulkTargets.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </select>
-              <BulkButton onClick={() => applyBulk(true)} disabled={isBulkPending} primary>
+              <BulkButton onClick={() => applyBulk(true)} disabled={isBulkPending || !target} primary>
                 체크
               </BulkButton>
-              <BulkButton onClick={() => applyBulk(false)} disabled={isBulkPending}>
+              <BulkButton onClick={() => applyBulk(false)} disabled={isBulkPending || !target}>
                 해제
               </BulkButton>
               <button
@@ -393,8 +406,16 @@ export function RosterTable({
                   {f}
                 </th>
               ))}
-              <th className="px-3 py-2 text-center font-medium">납부</th>
-              <th className="px-3 py-2 text-center font-medium">참석</th>
+              {showPaid && (
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium">
+                  <BuiltinCheckHeader eventId={eventId} checkKey="paid" canEdit={canEdit} />
+                </th>
+              )}
+              {showAttended && (
+                <th className="whitespace-nowrap px-3 py-2 text-center font-medium">
+                  <BuiltinCheckHeader eventId={eventId} checkKey="attended" canEdit={canEdit} />
+                </th>
+              )}
               {checkColumns.map((c) => (
                 <th key={c} className="whitespace-nowrap px-3 py-2 text-center font-medium">
                   <CheckColumnHeader eventId={eventId} name={c} canEdit={canEdit} />
@@ -402,7 +423,7 @@ export function RosterTable({
               ))}
               {canEdit && (
                 <th className="px-3 py-2 font-medium">
-                  <AddCheckColumn eventId={eventId} />
+                  <AddCheckColumn eventId={eventId} hiddenChecks={hiddenChecks} />
                 </th>
               )}
               {canEdit && <th className="px-3 py-2" aria-label="수정" />}
@@ -417,6 +438,8 @@ export function RosterTable({
                 kind={kind}
                 extraFields={extraFields}
                 checkColumns={checkColumns}
+                showPaid={showPaid}
+                showAttended={showAttended}
                 canEdit={canEdit}
                 selected={selectedIds.has(p.id)}
                 onSelect={() => toggleOne(p.id)}
@@ -505,6 +528,8 @@ function RosterRowView({
   kind,
   extraFields,
   checkColumns,
+  showPaid,
+  showAttended,
   canEdit,
   selected,
   onSelect,
@@ -514,6 +539,8 @@ function RosterRowView({
   kind: EventKind;
   extraFields: string[];
   checkColumns: string[];
+  showPaid: boolean;
+  showAttended: boolean;
   canEdit: boolean;
   selected: boolean;
   onSelect: () => void;
@@ -532,7 +559,7 @@ function RosterRowView({
   if (editing) {
     return (
       <tr className="bg-blue-50/40 dark:bg-blue-950/20">
-        <td colSpan={extraFields.length + checkColumns.length + 8} className="space-y-2 px-3 py-3">
+        <td colSpan={extraFields.length + checkColumns.length + 6 + (showPaid ? 1 : 0) + (showAttended ? 1 : 0)} className="space-y-2 px-3 py-3">
           {error && <ErrorText>{error}</ErrorText>}
           <ParticipantFields kind={kind} extraFields={extraFields} value={value} onChange={setValue} />
           <div className="flex flex-wrap items-center gap-3">
@@ -595,27 +622,31 @@ function RosterRowView({
           {p.fields[f] || "-"}
         </td>
       ))}
-      <td className="px-3 py-2 text-center">
-        <FlagBox
-          value={p.paid}
-          label={`${p.name} 납부`}
-          disabled={!canEdit}
-          onSave={(next) => setParticipantFlag(p.id, "paid", next)}
-        />
-        {p.dues_exempt ? (
-          <span className="block whitespace-nowrap text-xs text-green-700 dark:text-green-300">학회비 면제</span>
-        ) : p.paid_income_id ? (
-          <span className="block whitespace-nowrap text-xs text-blue-700 dark:text-blue-300">입금 확인</span>
-        ) : null}
-      </td>
-      <td className="px-3 py-2 text-center">
-        <FlagBox
-          value={p.attended}
-          label={`${p.name} 참석`}
-          disabled={!canEdit}
-          onSave={(next) => setParticipantFlag(p.id, "attended", next)}
-        />
-      </td>
+      {showPaid && (
+        <td className="px-3 py-2 text-center">
+          <FlagBox
+            value={p.paid}
+            label={`${p.name} 납부`}
+            disabled={!canEdit}
+            onSave={(next) => setParticipantFlag(p.id, "paid", next)}
+          />
+          {p.dues_exempt ? (
+            <span className="block whitespace-nowrap text-xs text-green-700 dark:text-green-300">학회비 면제</span>
+          ) : p.paid_income_id ? (
+            <span className="block whitespace-nowrap text-xs text-blue-700 dark:text-blue-300">입금 확인</span>
+          ) : null}
+        </td>
+      )}
+      {showAttended && (
+        <td className="px-3 py-2 text-center">
+          <FlagBox
+            value={p.attended}
+            label={`${p.name} 참석`}
+            disabled={!canEdit}
+            onSave={(next) => setParticipantFlag(p.id, "attended", next)}
+          />
+        </td>
+      )}
       {checkColumns.map((c) => (
         <td key={c} className="px-3 py-2 text-center">
           <FlagBox
@@ -640,11 +671,21 @@ function RosterRowView({
 }
 
 /** 표 머리글의 '+ 추가': 누르면 항목 이름 칸이 나오고, 저장하면 체크 칸이 생긴다 */
-function AddCheckColumn({ eventId }: { eventId: string }) {
+function AddCheckColumn({ eventId, hiddenChecks }: { eventId: string; hiddenChecks: string[] }) {
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  /** 숨겨 둔 납부·참석을 다시 보이게 */
+  function restore(key: BuiltinCheck) {
+    setError(null);
+    startTransition(async () => {
+      const result = await setBuiltinCheckHidden(eventId, key, false);
+      if (result?.error) setError(result.error);
+      else setOpen(false);
+    });
+  }
 
   if (!open) {
     return (
@@ -674,6 +715,24 @@ function AddCheckColumn({ eventId }: { eventId: string }) {
         });
       }}
     >
+      {hiddenChecks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 text-xs font-normal text-zinc-500">
+          숨긴 칸 다시 보이기:
+          {(["paid", "attended"] as const)
+            .filter((k) => hiddenChecks.includes(k))
+            .map((k) => (
+              <button
+                key={k}
+                type="button"
+                disabled={isPending}
+                onClick={() => restore(k)}
+                className="rounded-full border border-blue-300 px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+              >
+                {k === "paid" ? "납부" : "참석"}
+              </button>
+            ))}
+        </div>
+      )}
       <input
         autoFocus
         value={name}
@@ -705,6 +764,35 @@ function AddCheckColumn({ eventId }: { eventId: string }) {
       </div>
       {error && <span className="text-xs font-normal text-red-600">{error}</span>}
     </form>
+  );
+}
+
+/** 기본 칸(납부·참석) 머리글: 이름 + (권한이 있으면) 숨기기. 체크한 값은 지우지 않는다. */
+function BuiltinCheckHeader({ eventId, checkKey, canEdit }: { eventId: string; checkKey: BuiltinCheck; canEdit: boolean }) {
+  const [isPending, startTransition] = useTransition();
+  const label = checkKey === "paid" ? "납부" : "참석";
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      {canEdit && (
+        <button
+          type="button"
+          disabled={isPending}
+          aria-label={`'${label}' 칸 숨기기`}
+          title="칸 숨기기"
+          onClick={() => {
+            if (!confirm(`이 행사에서 '${label}' 칸을 숨길까요?\n체크해 둔 내용은 지워지지 않고, '+ 추가'에서 다시 보이게 할 수 있어요.`)) return;
+            startTransition(async () => {
+              const result = await setBuiltinCheckHidden(eventId, checkKey, true);
+              if (result?.error) alert(result.error);
+            });
+          }}
+          className="rounded-full px-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:hover:bg-zinc-800"
+        >
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -878,14 +966,18 @@ export function ExportRoster({
   eventName,
   extraFields,
   checkColumns,
+  hiddenChecks,
   participants,
 }: {
   eventName: string;
   extraFields: string[];
   checkColumns: string[];
+  hiddenChecks: string[];
   participants: Participant[];
 }) {
   const [isPending, startTransition] = useTransition();
+  const showPaid = !hiddenChecks.includes("paid");
+  const showAttended = !hiddenChecks.includes("attended");
   return (
     <button
       type="button"
@@ -893,15 +985,25 @@ export function ExportRoster({
       onClick={() =>
         startTransition(async () => {
           const XLSX = await import("xlsx");
-          const header = ["번호", "이름", "학번", "학년", ...extraFields, "납부", "참석", ...checkColumns, "메모"];
+          const header = [
+            "번호",
+            "이름",
+            "학번",
+            "학년",
+            ...extraFields,
+            ...(showPaid ? ["납부"] : []),
+            ...(showAttended ? ["참석"] : []),
+            ...checkColumns,
+            "메모",
+          ];
           const body = participants.map((p, i) => [
             i + 1,
             p.name,
             p.student_no,
             p.grade ?? "",
             ...extraFields.map((f) => p.fields[f] ?? ""),
-            p.paid ? (p.dues_exempt ? "O(학회비)" : "O") : "",
-            p.attended ? "O" : "",
+            ...(showPaid ? [p.paid ? (p.dues_exempt ? "O(학회비)" : "O") : ""] : []),
+            ...(showAttended ? [p.attended ? "O" : ""] : []),
             ...checkColumns.map((c) => (p.checks?.[c] ? "O" : "")),
             p.memo,
           ]);

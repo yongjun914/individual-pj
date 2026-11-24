@@ -553,6 +553,19 @@ check("항목을 지우면 사람마다 저장된 값도 지워짐",
   && (await db.query(`select count(*)::int as n from public.event_participants where event_id = $1 and checks ? '티셔츠 수령'`, [evC])).rows[0].n === 0
   && (await db.query(`select cardinality(check_columns) as n from public.events where id = $1`, [evC])).rows[0].n === 0);
 
+// --- 납부·참석 칸 숨기기
+const paidBefore = (await db.query(`select count(*)::int as n from public.event_participants where event_id = $1 and paid`, [evC])).rows[0].n;
+check("학회장은 납부·참석 칸을 숨김",
+  (await as(A, `update public.events set hidden_checks = array['paid', 'attended'] where id = $1 returning id`, [evC])).rows.length === 1);
+check("칸을 숨겨도 체크해 둔 값은 그대로",
+  (await db.query(`select count(*)::int as n from public.event_participants where event_id = $1 and paid`, [evC])).rows[0].n === paidBefore);
+await expectError("납부·참석 말고는 숨길 수 없음",
+  () => as(A, `update public.events set hidden_checks = array['memo'] where id = $1`, [evC]), /check/);
+check("외부인은 칸을 숨기지 못함",
+  (await as(C, `update public.events set hidden_checks = '{}' where id = $1 returning id`, [evC])).rows.length === 0);
+check("다시 보이게 할 수 있음",
+  (await as(A, `update public.events set hidden_checks = '{}' where id = $1 returning id`, [evC])).rows.length === 1);
+
 // --- 학생회 찾기 · 참여 요청 (이 시점: term2에는 A만, B·C는 멤버 아님)
 const found = (await as(C, `select * from public.search_organizations('컴퓨터공학')`)).rows;
 check("외부인도 이름으로 학생회를 찾음", found.length === 1 && found[0].organization_id === orgId && found[0].requested === false);

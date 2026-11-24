@@ -48,6 +48,7 @@ type EventDetail = {
   form_url: string;
   extra_fields: string[];
   check_columns: string[];
+  hidden_checks: string[];
   memo: string;
   income_id: string | null;
   terms: { name: string; is_active: boolean; organizations: { name: string } };
@@ -88,7 +89,7 @@ async function EventContent({
   const { data: event } = await supabase
     .from("events")
     .select(
-      "id, term_id, category_id, kind, name, starts_on, ends_on, place, fee, capacity, form_url, extra_fields, check_columns, memo, income_id, terms!inner(name, is_active, organizations!inner(name))",
+      "id, term_id, category_id, kind, name, starts_on, ends_on, place, fee, capacity, form_url, extra_fields, check_columns, hidden_checks, memo, income_id, terms!inner(name, is_active, organizations!inner(name))",
     )
     .eq("id", id)
     .is("deleted_at", null)
@@ -110,6 +111,8 @@ async function EventContent({
   const status = eventStatus(event.starts_on, event.ends_on, todayInSeoul());
   const paid = paidTotal(event.kind, Number(event.fee), participants);
   const attendedCount = participants.filter((p) => p.attended).length;
+  // 이 행사에서 숨긴 기본 칸 (납부·참석)
+  const hidden = event.hidden_checks ?? [];
 
   return (
     <>
@@ -143,11 +146,17 @@ async function EventContent({
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { label: "신청", value: `${participants.length}${event.capacity ? ` / ${event.capacity}` : ""}명` },
-          { label: "납부", value: `${paid.count + paid.exemptCount}명${paid.exemptCount > 0 ? ` (면제 ${paid.exemptCount})` : ""}` },
-          { label: "참석", value: `${attendedCount}명` },
-          { label: "납부 금액", value: formatWon(paid.amount) },
-        ].map((s) => (
+          { label: "신청", value: `${participants.length}${event.capacity ? ` / ${event.capacity}` : ""}명`, show: true },
+          {
+            label: "납부",
+            value: `${paid.count + paid.exemptCount}명${paid.exemptCount > 0 ? ` (면제 ${paid.exemptCount})` : ""}`,
+            show: !hidden.includes("paid"),
+          },
+          { label: "참석", value: `${attendedCount}명`, show: !hidden.includes("attended") },
+          { label: "납부 금액", value: formatWon(paid.amount), show: !hidden.includes("paid") },
+        ]
+          .filter((s) => s.show)
+          .map((s) => (
           <div key={s.label} className="rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <dt className="text-sm text-zinc-500">{s.label}</dt>
             <dd className="mt-1 text-xl font-bold tabular-nums md:text-2xl">{s.value}</dd>
@@ -191,13 +200,22 @@ function RosterTab({ event, participants, canEdit }: { event: EventDetail; parti
         )}
         <Card
           title={`명단 (${participants.length}명)`}
-          actions={<ExportRoster eventName={event.name} extraFields={event.extra_fields} checkColumns={event.check_columns} participants={participants} />}
+          actions={
+            <ExportRoster
+              eventName={event.name}
+              extraFields={event.extra_fields}
+              checkColumns={event.check_columns}
+              hiddenChecks={event.hidden_checks ?? []}
+              participants={participants}
+            />
+          }
         >
           <RosterTable
             eventId={event.id}
             kind={event.kind}
             extraFields={event.extra_fields}
             checkColumns={event.check_columns}
+            hiddenChecks={event.hidden_checks ?? []}
             participants={participants}
             canEdit={canEdit}
           />
