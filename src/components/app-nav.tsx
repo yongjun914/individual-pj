@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -67,7 +68,7 @@ export function TopBar({ user }: { user: NavUser | null }) {
     <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
-          <span aria-hidden className="starburst flex h-9 w-9 items-center justify-center bg-green-200 text-base font-black text-green-900">₩</span>
+          <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
           <span className="text-lg">학생회 회계</span>
         </Link>
 
@@ -247,7 +248,7 @@ export function TopBarPlaceholder() {
     <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
-          <span aria-hidden className="starburst flex h-9 w-9 items-center justify-center bg-green-200 text-base font-black text-green-900">₩</span>
+          <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
           <span className="text-lg">학생회 회계</span>
         </Link>
       </div>
