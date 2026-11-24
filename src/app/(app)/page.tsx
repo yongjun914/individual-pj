@@ -6,7 +6,7 @@ import { requireUserId } from "@/lib/auth";
 import { summarizeByTerm, type SummaryRow } from "@/lib/expenses";
 import { getActiveMemberships } from "@/lib/memberships";
 import { can } from "@/lib/permissions";
-import { isAdminRole } from "@/lib/roles";
+import { isManagerRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 import { HomeView, type GuideState, type RecentExpense } from "./home-view";
@@ -77,7 +77,7 @@ async function HomeContent() {
     canAudit: can(primary, "audit"),
     canPayments: can(primary, "payments"),
     canSettings: can(primary, "settings"),
-    isAdmin: isAdminRole(primary.role),
+    isAdmin: isManagerRole(primary.role),
     hasIncome: (incomeRows ?? []).some((r) => r.term_id === primary.terms.id),
     hasExpense: primaryRows.length > 0,
     receiptsDone: primaryRows.length > 0 && primaryRows.every((r) => r.status !== "needs_receipt"),

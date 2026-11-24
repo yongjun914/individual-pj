@@ -47,12 +47,12 @@ export function CreateOrgForm() {
         />
       </Field>
 
-      <Field label="기수" name="termName" error={e.termName} hint="감사 자료와 인수인계는 기수 단위로 나뉩니다.">
+      <Field label="연도" name="termName" error={e.termName} hint="숫자만 쓰면 '2026년 ○○ 학생회'처럼 보여요. 감사 자료와 인수인계는 연도 단위로 나뉘어요.">
         <input
           id="termName"
           name="termName"
           defaultValue={v?.termName}
-          placeholder="예: 2026년 제38대"
+          placeholder="예: 2026"
           maxLength={50}
           className={inputClass}
           aria-invalid={Boolean(e.termName)}
@@ -61,12 +61,11 @@ export function CreateOrgForm() {
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">내 역할</legend>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <RoleOption value="president" label="학회장" defaultChecked={(v?.role ?? "president") === "president"} />
           <RoleOption value="vice_president" label="부학회장" defaultChecked={v?.role === "vice_president"} />
-          <RoleOption value="treasurer" label="총무" defaultChecked={v?.role === "treasurer"} />
         </div>
-        <p className="text-sm text-zinc-500">학생회를 만든 사람은 학생회원 관리(멤버 초대·역할·권한)를 할 수 있어요.</p>
+        <p className="text-sm text-zinc-500">총무는 학생회를 만든 뒤 초대 링크로 들어오면 돼요. 학회장·부학회장은 학생회원 관리(멤버 초대·역할·권한)를 할 수 있어요.</p>
         {e.role && <p className="text-sm text-red-600">{e.role}</p>}
       </fieldset>
 

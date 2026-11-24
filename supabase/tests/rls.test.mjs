@@ -9,7 +9,7 @@ import { join } from "node:path";
 const migrationsDir = join(import.meta.dirname, "..", "migrations");
 const db = new PGlite();
 
-const A = "00000000-0000-0000-0000-00000000000a"; // 총무 (학생회 생성자)
+const A = "00000000-0000-0000-0000-00000000000a"; // 학회장 (학생회 생성자)
 const B = "00000000-0000-0000-0000-00000000000b"; // 집행부원 (초대로 합류)
 const C = "00000000-0000-0000-0000-00000000000c"; // 외부인
 
@@ -85,7 +85,7 @@ const cats = await as(A, `select count(*)::int as n from public.categories where
 check("기본 카테고리 5개 생성", cats.rows[0].n === 5);
 check("외부인 C는 학생회를 못 봄", (await as(C, `select * from public.organizations`)).rows.length === 0);
 await expectError("집행부원 역할로는 학생회 생성 불가",
-  () => as(C, `select public.create_organization('a', 'b', 'c', 'member')`), /학회장·부학회장·총무/);
+  () => as(C, `select public.create_organization('a', 'b', 'c', 'member')`), /학회장·부학회장/);
 await expectError("비로그인은 학생회 생성 불가", () => db.transaction(async (tx) => {
   await tx.exec(`set local role anon;`);
   return tx.query(`select public.create_organization('a', 'b', 'c')`);
@@ -246,8 +246,8 @@ await expectError("집행부원이 자기 역할을 총무로 올리기 불가",
 
 // --- 기수 전환
 await expectError("집행부원은 기수 전환 불가",
-  () => as(B, `select public.start_new_term($1, '2027년 제39대')`, [orgId]), /학회장·부학회장·총무만/);
-const term2 = (await as(A, `select public.start_new_term($1, '2027년 제39대', 'treasurer') as id`, [orgId])).rows[0].id;
+  () => as(B, `select public.start_new_term($1, '2027년 제39대')`, [orgId]), /학회장·부학회장만/);
+const term2 = (await as(A, `select public.start_new_term($1, '2027년 제39대', 'president') as id`, [orgId])).rows[0].id;
 const terms = await as(A, `select id, is_active from public.terms where organization_id = $1`, [orgId]);
 check("새 기수 활성, 이전 기수 비활성", terms.rows.filter((t) => t.is_active).length === 1 && terms.rows.find((t) => t.id === term1).is_active === false);
 check("카테고리가 새 기수로 복사(6개)", (await as(A, `select count(*)::int as n from public.categories where term_id = $1`, [term2])).rows[0].n === 6);
@@ -401,10 +401,133 @@ check("부학회장은 해제 목록이 있어도 모든 기능 사용",
   (await as(A, `update public.memberships set revoked_permissions = array['events'] where term_id = $1 and user_id = $2 returning id`, [term2, C])).rows.length === 1
   && (await as(C, `insert into public.event_participants (event_id, name, student_no) values ($1, '최학생', '22') returning id`, [ev])).rows.length === 1);
 await expectError("부원으로는 기수 전환 불가(역할 확인)",
-  () => as(A, `select public.start_new_term($1, 'x', 'member')`, [orgId]), /학회장·부학회장·총무/);
+  () => as(A, `select public.start_new_term($1, 'x', 'member')`, [orgId]), /학회장·부학회장/);
 
 // 정리: 다음 회원 탈퇴 시나리오를 위해 term2에서 B·C를 내보낸다
 await as(A, `delete from public.memberships where term_id = $1 and user_id in ($2, $3)`, [term2, B, C]);
+
+// --- 학생회원 관리는 학회장·부학회장만 · 직책 변경 요청과 승인
+const D0 = "00000000-0000-0000-0000-0000000000ee"; // 어느 학생회에도 없는 사용자
+await as(A, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'officer'), ($1, $3, 'treasurer')`, [term2, B, C]);
+check("총무는 모든 기능 사용(수입 등록)",
+  (await as(C, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-06', '기타', 100, $2) returning id`, [term2, C])).rows.length === 1);
+check("총무는 멤버 역할 변경 불가",
+  (await as(C, `update public.memberships set position = 'x' where term_id = $1 and user_id = $2 returning id`, [term2, B])).rows.length === 0);
+check("총무는 초대 링크 못 봄", (await as(C, `select * from public.invitations where term_id = $1`, [term2])).rows.length === 0);
+await expectError("총무는 초대 링크 못 만듦",
+  () => as(C, `insert into public.invitations (term_id, role, created_by) values ($1, 'member', $2)`, [term2, C]), /row-level security/);
+await expectError("총무는 새 연도 시작 불가",
+  () => as(C, `select public.start_new_term($1, '2028', 'president')`, [orgId]), /학회장·부학회장만/);
+await expectError("유일한 학회장은 스스로 임원으로 못 내려감",
+  () => as(A, `update public.memberships set role = 'officer' where term_id = $1 and user_id = $2`, [term2, A]), /한 명은 있어야/);
+check("학회장은 자기 역할을 부학회장으로 직접 변경",
+  (await as(A, `update public.memberships set role = 'vice_president', position = '부학회장' where term_id = $1 and user_id = $2 returning id`, [term2, A])).rows.length === 1);
+await expectError("학회장·부학회장은 요청 대신 직접 변경",
+  () => as(A, `select public.request_role_change($1, 'president', '')`, [term2]), /직접 바꿀/);
+await expectError("외부인은 요청 불가",
+  () => as(D0, `select public.request_role_change($1, 'officer', '')`, [term2]), /멤버만/);
+
+const req1 = (await as(B, `select public.request_role_change($1, 'officer', '홍보부 차장') as id`, [term2])).rows[0].id;
+const req2 = (await as(B, `select public.request_role_change($1, 'vice_president', '기획부') as id`, [term2])).rows[0].id;
+check("다시 요청하면 이전 요청은 취소되고 하나만 남음",
+  (await db.query(`select status from public.role_change_requests where id = $1`, [req1])).rows[0].status === "cancelled"
+  && (await db.query(`select count(*)::int as n from public.role_change_requests where status = 'pending'`)).rows[0].n === 1);
+await expectError("같은 역할·직책으로는 요청 불가",
+  () => as(B, `select public.request_role_change($1, 'officer', '')`, [term2]), /같은 역할/);
+check("요청은 본인과 학회장·부학회장만 봄",
+  (await as(B, `select id from public.role_change_requests`)).rows.length === 2
+  && (await as(A, `select id from public.role_change_requests`)).rows.length === 2
+  && (await as(C, `select id from public.role_change_requests`)).rows.length === 0);
+await expectError("요청 직접 수정 불가",
+  async () => { const r = await as(B, `update public.role_change_requests set status = 'approved' where id = $1 returning id`, [req2]); if (r.rows.length === 0) throw new Error("0 rows"); });
+await expectError("본인은 자기 요청 승인 불가",
+  () => as(B, `select public.decide_role_request($1, true)`, [req2]), /학회장·부학회장만/);
+await expectError("총무는 요청 승인 불가",
+  () => as(C, `select public.decide_role_request($1, true)`, [req2]), /학회장·부학회장만/);
+check("요청만으로는 역할이 바뀌지 않음",
+  (await db.query(`select role from public.memberships where term_id = $1 and user_id = $2`, [term2, B])).rows[0].role === "officer");
+await as(A, `select public.decide_role_request($1, true)`, [req2]);
+const bAfter = (await db.query(`select role, position from public.memberships where term_id = $1 and user_id = $2`, [term2, B])).rows[0];
+check("부학회장이 승인하면 역할·직책이 바뀜", bAfter.role === "vice_president" && bAfter.position === "기획부");
+await expectError("처리된 요청은 다시 처리 불가",
+  () => as(A, `select public.decide_role_request($1, false)`, [req2]), /이미 처리/);
+
+const req3 = (await as(C, `select public.request_role_change($1, 'member', '') as id`, [term2])).rows[0].id;
+await as(B, `select public.decide_role_request($1, false)`, [req3]);
+check("거절하면 역할은 그대로",
+  (await db.query(`select role from public.memberships where term_id = $1 and user_id = $2`, [term2, C])).rows[0].role === "treasurer"
+  && (await db.query(`select status from public.role_change_requests where id = $1`, [req3])).rows[0].status === "rejected");
+const req4 = (await as(C, `select public.request_role_change($1, 'officer', '') as id`, [term2])).rows[0].id;
+await as(C, `select public.cancel_role_request($1)`, [req4]);
+check("본인은 자기 요청 취소", (await db.query(`select status from public.role_change_requests where id = $1`, [req4])).rows[0].status === "cancelled");
+await expectError("남의 요청은 취소 불가", async () => {
+  const id = (await as(C, `select public.request_role_change($1, 'officer', '') as id`, [term2])).rows[0].id;
+  await as(A, `select public.cancel_role_request($1)`, [id]);
+}, /취소할 수 있는/);
+
+// 정리: A는 다시 학회장, B·C는 term2에서 내보낸다
+await as(A, `update public.memberships set role = 'president', position = '' where term_id = $1 and user_id = $2`, [term2, A]);
+await as(A, `delete from public.memberships where term_id = $1 and user_id in ($2, $3)`, [term2, B, C]);
+
+// --- 학회비 납부자 명단 · 입금 문자로 참가비 납부 자동 체크 (이 시점: term2에는 A만)
+const evC = (await as(A, `insert into public.events (term_id, kind, name, fee, created_by) values ($1, 'closing', '종강총회', 20000, $2) returning id`, [term2, A])).rows[0].id;
+await as(A, `insert into public.event_participants (event_id, name, student_no) values
+  ($1, '김납부', '24'), ($1, '이미납', '23'), ($1, '박동명', '22'), ($1, '박동명', '25'), ($1, '한현금', '24')`, [evC]);
+const pOf = async (name, no) => (await db.query(
+  `select paid, dues_exempt, paid_income_id from public.event_participants where event_id = $1 and name = $2 and student_no = $3`, [evC, name, no])).rows[0];
+
+await as(A, `insert into public.dues_payers (term_id, name, student_no) values ($1, '김납부', '24'), ($1, '최나중', '22')`, [term2]);
+check("명단에 있던 학회비 납부자는 납부·면제로 바뀜", (await pOf("김납부", "24")).paid === true && (await pOf("김납부", "24")).dues_exempt === true);
+check("학회비 납부자가 아니면 그대로", (await pOf("이미납", "23")).paid === false);
+await as(A, `insert into public.event_participants (event_id, name, student_no) values ($1, '최 나중', '22')`, [evC]);
+check("나중에 명단에 넣어도 학회비 납부자면 납부·면제(이름 띄어쓰기 무시)", (await pOf("최 나중", "22")).dues_exempt === true);
+check("학번이 다르면 다른 사람", (await as(A, `insert into public.event_participants (event_id, name, student_no) values ($1, '김납부', '23') returning dues_exempt`, [evC])).rows[0].dues_exempt === false);
+await expectError("학회비 납부자 학번은 2자리만",
+  () => as(A, `insert into public.dues_payers (term_id, name, student_no) values ($1, '오학생', '2024')`, [term2]), /check/);
+check("외부인은 납부자 명단 못 봄", (await as(C, `select id from public.dues_payers`)).rows.length === 0);
+await expectError("외부인은 납부자 추가 불가",
+  () => as(C, `insert into public.dues_payers (term_id, name, student_no) values ($1, '가짜', '24')`, [term2]), /row-level security/);
+await as(A, `delete from public.dues_payers where term_id = $1 and name = '김납부'`, [term2]);
+check("납부자에서 빼면 면제로 체크된 것만 되돌림", (await pOf("김납부", "24")).paid === false && (await pOf("김납부", "24")).dues_exempt === false);
+await as(A, `insert into public.dues_payers (term_id, name, student_no) values ($1, '김납부', '24')`, [term2]);
+
+// 입금 문자로 만들어진 수입 (서비스가 기록하는 것처럼)
+let dk = 0;
+const deposit = async (payer, amount) => {
+  const pe = (await db.query(`insert into public.payment_events (organization_id, raw_text, kind, amount, merchant, dedupe_key)
+    values ($1, '입금', 'deposit', $2, $3, $4) returning id`, [orgId, amount, payer, `dep-${++dk}`])).rows[0].id;
+  return (await db.query(`insert into public.incomes (term_id, received_on, source, payer, amount, payment_method, payment_event_id)
+    values ($1, '2026-12-10', '기타', $2, $3, 'transfer', $4) returning id`, [term2, payer, amount, pe])).rows[0].id;
+};
+const inc1 = await deposit("이미납", 20000);
+check("입금자명·금액이 맞으면 자동으로 납부 체크", (await pOf("이미납", "23")).paid === true && (await pOf("이미납", "23")).paid_income_id === inc1);
+check("연결된 입금은 수입 항목이 '행사 별도 납입'으로",
+  (await db.query(`select source, memo from public.incomes where id = $1`, [inc1])).rows[0].source === "행사 별도 납입");
+const incAmb = await deposit("박동명", 20000);
+check("동명이인이면 자동으로 체크하지 않음", (await pOf("박동명", "22")).paid === false && (await pOf("박동명", "25")).paid === false);
+const inc25 = await deposit("25박동명", 20000);
+check("입금자명에 학번이 붙어 있으면 그 사람으로", (await pOf("박동명", "25")).paid_income_id === inc25 && (await pOf("박동명", "22")).paid === false);
+await deposit("한현금", 15000);
+check("금액이 다르면 자동으로 체크하지 않음", (await pOf("한현금", "24")).paid === false);
+const unmatched = (await as(A, `select * from public.event_unmatched_deposits($1)`, [evC])).rows;
+check("입금 확인 필요 목록에는 참가비 배수인 미연결 입금만", unmatched.length === 1 && unmatched[0].income_id === incAmb);
+check("행사 권한이 없으면 확인 필요 목록이 빈 결과", (await as(C, `select * from public.event_unmatched_deposits($1)`, [evC])).rows.length === 0);
+const pAmb = (await db.query(`select id from public.event_participants where event_id = $1 and name = '박동명' and student_no = '22'`, [evC])).rows[0].id;
+await expectError("외부인은 입금 연결 불가", () => as(C, `select public.assign_deposit($1, $2)`, [incAmb, pAmb]), /권한/);
+await as(A, `select public.assign_deposit($1, $2)`, [incAmb, pAmb]);
+check("직접 연결하면 납부 체크", (await pOf("박동명", "22")).paid_income_id === incAmb);
+await expectError("이미 연결된 입금은 다시 연결 불가",
+  () => as(A, `select public.assign_deposit($1, $2)`, [incAmb, pAmb]), /이미 다른 사람/);
+check("연결하고 나면 확인 필요 목록에서 빠짐", (await as(A, `select * from public.event_unmatched_deposits($1)`, [evC])).rows.length === 0);
+const incExempt = await deposit("24김납부", 20000);
+check("학회비 면제자에게는 입금을 연결하지 않음",
+  (await db.query(`select count(*)::int as n from public.event_participants where paid_income_id = $1`, [incExempt])).rows[0].n === 0);
+
+const evJ = (await as(A, `insert into public.events (term_id, kind, name, fee, created_by) values ($1, 'jacket', '과잠', 30000, $2) returning id`, [term2, A])).rows[0].id;
+await as(A, `insert into public.event_participants (event_id, name, student_no, fields) values ($1, '정과잠', '23', '{"수량":"2벌"}')`, [evJ]);
+const incJ = await deposit("정과잠", 60000);
+check("과잠은 참가비×수량과 맞으면 납부 체크",
+  (await db.query(`select paid_income_id from public.event_participants where event_id = $1`, [evJ])).rows[0].paid_income_id === incJ);
 
 // --- 회원 탈퇴 (이 시점: A는 term2의 유일한 총무, B는 term2에서 나간 상태)
 const D = "00000000-0000-0000-0000-00000000000d";

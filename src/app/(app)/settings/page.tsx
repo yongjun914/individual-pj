@@ -8,10 +8,11 @@ import { Card, Page, PageHeader } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { can } from "@/lib/permissions";
-import { isAdminRole } from "@/lib/roles";
+import { isManagerRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
+import { termLabel } from "@/lib/terms";
 
-import { CategoryManager, OrgInfoForm } from "./controls";
+import { CategoryManager, OrgInfoForm, TermNameForm } from "./controls";
 
 export const metadata: Metadata = { title: "학생회 설정" };
 
@@ -20,7 +21,7 @@ export default function SettingsPage({ searchParams }: PageProps<"/settings">) {
     <Page>
       <PageHeader
         title="학생회 설정"
-        description="학생회 정보, 지출을 나누는 행사 분류, 기수, 결제 문자 연동을 관리해요."
+        description="학생회 정보, 지출을 나누는 행사 분류, 연도, 결제 문자 연동을 관리해요."
       />
       <Suspense fallback={<p className="text-zinc-500">불러오는 중…</p>}>
         <SettingsContent searchParams={searchParams} />
@@ -53,9 +54,9 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
         마이페이지
       </Link>
       에 있어요.
-      {isAdminRole(current.role) && (
+      {isManagerRole(current.role) && (
         <>
-          {" "}멤버 초대·역할·권한·기수 전환은{" "}
+          {" "}멤버 초대·역할·권한·연도 전환은{" "}
           <Link href={`/members?org=${org.id}`} className="font-medium text-blue-600 underline-offset-4 hover:underline">
             학생회원 관리
           </Link>
@@ -123,18 +124,19 @@ async function SettingsContent({ searchParams }: { searchParams: PageProps<"/set
           />
         </Card>
 
-        <Card title="기수" description={`지금 기수: ${term.name}`}>
+        <Card title="연도" description={`지금 연도: ${termLabel(term.name)}`}>
+          <TermNameForm termId={term.id} name={term.name} />
           <ul className="space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
             {(terms ?? []).map((t) => (
               <li key={t.id}>
-                {t.name}
+                {termLabel(t.name)}
                 {t.is_active ? " (지금)" : ""}
                 {t.starts_on ? ` · ${t.starts_on}` : ""}
                 {t.ends_on ? ` ~ ${t.ends_on}` : ""}
               </li>
             ))}
           </ul>
-          <p className="text-sm text-zinc-500">새 기수 시작은 학회장·부학회장이 학생회원 관리에서 할 수 있어요.</p>
+          <p className="text-sm text-zinc-500">새 연도 시작은 학회장·부학회장이 학생회원 관리에서 할 수 있어요.</p>
         </Card>
 
         <Card title="결제 연동" description="학생회 카드·통장 알림 문자를 받아 지출·수입을 자동으로 기록해요.">

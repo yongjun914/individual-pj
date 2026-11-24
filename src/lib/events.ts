@@ -96,10 +96,31 @@ export function jacketSummary(rows: JacketRow[]) {
   return { sizes, total };
 }
 
-/** 참가비 납부 합계: 과잠은 수량 × 참가비, 그 외는 납부 인원 × 참가비 */
-export function paidTotal(kind: EventKind, fee: number, rows: JacketRow[]) {
-  const paid = rows.filter((r) => r.paid);
-  if (kind !== "jacket") return { count: paid.length, amount: paid.length * fee };
-  const { total } = jacketSummary(paid);
-  return { count: paid.length, amount: total * fee };
+type PaidRow = JacketRow & { dues_exempt?: boolean; paid_income_id?: string | null };
+
+/** 한 사람이 낼 금액: 과잠은 수량 × 참가비, 그 외는 참가비 */
+function dueOf(kind: EventKind, fee: number, rows: JacketRow[]) {
+  return kind === "jacket" ? jacketSummary(rows).total * fee : rows.length * fee;
+}
+
+/**
+ * 참가비 납부 합계 (학회비 면제자는 돈을 내지 않으니 뺀다).
+ *   count·amount: 참가비를 낸 사람과 금액
+ *   deposit*: 그중 입금 문자로 확인된 것 (이미 수입에 한 건씩 기록돼 있다)
+ *   manual*: 그 밖에 손으로 체크한 것 (현금 등, '별도 납입' 수입으로 한 번에 기록할 몫)
+ *   exemptCount: 학회비 납부자라 면제된 사람
+ */
+export function paidTotal(kind: EventKind, fee: number, rows: PaidRow[]) {
+  const paid = rows.filter((r) => r.paid && !r.dues_exempt);
+  const deposit = paid.filter((r) => r.paid_income_id);
+  const manual = paid.filter((r) => !r.paid_income_id);
+  return {
+    count: paid.length,
+    amount: dueOf(kind, fee, paid),
+    depositCount: deposit.length,
+    depositAmount: dueOf(kind, fee, deposit),
+    manualCount: manual.length,
+    manualAmount: dueOf(kind, fee, manual),
+    exemptCount: rows.filter((r) => r.dues_exempt).length,
+  };
 }

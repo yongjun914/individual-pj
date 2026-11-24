@@ -31,7 +31,7 @@ export async function issueWebhookToken(organizationId: string, label: string): 
 
   if (error) {
     console.error("웹훅 토큰 발급 실패", error);
-    return { ok: false, error: "토큰을 만들지 못했어요. 현재 기수의 총무만 만들 수 있어요." };
+    return { ok: false, error: "토큰을 만들지 못했어요. 올해의 총무만 만들 수 있어요." };
   }
 
   return { ok: true, token };

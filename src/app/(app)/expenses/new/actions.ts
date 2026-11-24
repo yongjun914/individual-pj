@@ -31,7 +31,7 @@ export async function createExpense(input: ExpenseInput): Promise<CreateExpenseR
     .maybeSingle();
 
   if (!term || !term.is_active) {
-    return { ok: false, error: "이 학생회의 현재 기수에 지출을 등록할 수 없습니다." };
+    return { ok: false, error: "이 학생회의 현재 연도에 지출을 등록할 수 없습니다." };
   }
 
   if (!(await categoryBelongsToTerm(supabase, input.categoryId, input.termId))) {

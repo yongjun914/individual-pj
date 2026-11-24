@@ -9,6 +9,7 @@ import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import { IncomeForm } from "../income-form";
 
@@ -47,7 +48,7 @@ async function NewIncomeContent() {
 
   return (
     <IncomeForm
-      terms={managed.map((m) => ({ id: m.terms.id, label: `${m.terms.organizations.name} · ${m.terms.name}` }))}
+      terms={managed.map((m) => ({ id: m.terms.id, label: `${termOrgLabel(m.terms.name, m.terms.organizations.name)}` }))}
       today={todayInSeoul()}
     />
   );

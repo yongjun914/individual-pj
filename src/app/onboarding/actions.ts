@@ -10,14 +10,14 @@ export type CreateOrgState = {
   values?: { schoolName: string; name: string; termName: string; role: string };
 };
 
-const ROLES = ["president", "vice_president", "treasurer"] as const;
+const ROLES = ["president", "vice_president"] as const;
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** 학생회 생성: 학생회 + 첫 기수 + 내 역할 + 기본 카테고리를 한 번에 만든다. */
+/** 학생회 생성: 학생회 + 첫 연도 + 내 역할 + 기본 카테고리를 한 번에 만든다. */
 export async function createOrganization(
   _prev: CreateOrgState,
   formData: FormData,
@@ -34,7 +34,7 @@ export async function createOrganization(
   else if (values.schoolName.length > 100) fieldErrors.schoolName = "100자 이내로 입력해 주세요.";
   if (!values.name) fieldErrors.name = "학생회 이름을 입력해 주세요.";
   else if (values.name.length > 100) fieldErrors.name = "100자 이내로 입력해 주세요.";
-  if (!values.termName) fieldErrors.termName = "기수 이름을 입력해 주세요.";
+  if (!values.termName) fieldErrors.termName = "연도를 입력해 주세요.";
   else if (values.termName.length > 50) fieldErrors.termName = "50자 이내로 입력해 주세요.";
   if (!ROLES.includes(values.role as (typeof ROLES)[number])) {
     fieldErrors.role = "역할을 골라 주세요.";

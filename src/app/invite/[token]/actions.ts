@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
-/** 초대 수락: 해당 기수의 멤버가 되고 홈으로 이동 */
+/** 초대 수락: 해당 연도의 멤버가 되고 홈으로 이동 */
 export async function acceptInvitation(formData: FormData) {
   const token = formData.get("token");
   if (typeof token !== "string" || !token) redirect("/");

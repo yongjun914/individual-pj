@@ -7,10 +7,12 @@ import { ButtonLink, Card, Page, PageHeader } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { formatDateTime, formatWon } from "@/lib/format";
 import { can, PERMISSION_LABELS, PERMISSIONS } from "@/lib/permissions";
-import { isAdminRole, roleLabel, type MemberRole } from "@/lib/roles";
+import { isManagerRole, roleLabel, type MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
+import { termLabel, termOrgLabel } from "@/lib/terms";
 
 import { DeleteAccount, MyNameForm } from "../settings/controls";
+import { MyRoleRequest } from "../members/role-requests";
 
 export const metadata: Metadata = { title: "마이페이지" };
 
@@ -33,7 +35,7 @@ type MyMembership = {
 const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
   president: "모든 기능을 쓰고, 학생회원 관리에서 멤버의 역할·직책·기능 권한을 정할 수 있어요.",
   vice_president: "모든 기능을 쓰고, 학생회원 관리에서 멤버의 역할·직책·기능 권한을 정할 수 있어요.",
-  treasurer: "모든 기능을 쓰고, 학생회원 관리도 할 수 있어요.",
+  treasurer: "모든 기능을 써요. 학생회원 관리는 학회장·부학회장이 해요.",
   officer: "기본으로 모든 기능을 쓸 수 있어요. 학회장·부학회장이 일부 기능 권한을 해제할 수 있어요.",
   member: "기본으로 모든 기능을 쓸 수 있어요. 학회장·부학회장이 일부 기능 권한을 해제할 수 있어요.",
 };
@@ -75,6 +77,27 @@ async function MyContent() {
   const past = (memberships ?? []).filter((m) => !m.terms.is_active);
   const activeTermIds = new Set(active.map((m) => m.terms.id));
 
+  // 내가 보낸, 아직 처리되지 않은 직책 변경 요청
+  const { data: myRequests } =
+    active.length > 0
+      ? await supabase
+          .from("role_change_requests")
+          .select("id, membership_id, requested_role, requested_position, created_at")
+          .in("membership_id", active.map((m) => m.id))
+          .eq("status", "pending")
+      : { data: [] };
+  const pendingFor = (membershipId: string) => {
+    const r = (myRequests ?? []).find((x) => x.membership_id === membershipId);
+    return r
+      ? {
+          id: r.id as string,
+          requestedRole: r.requested_role as MemberRole,
+          requestedPosition: r.requested_position as string,
+          requestedAt: formatDateTime(r.created_at as string),
+        }
+      : null;
+  };
+
   const mine = (myExpenses ?? []).filter((e) => e.status !== "cancelled");
   const mineThisTerm = mine.filter((e) => activeTermIds.has(e.term_id as string));
   const myNeedsReceipt = mine.filter((e) => e.status === "needs_receipt").length;
@@ -107,7 +130,7 @@ async function MyContent() {
       <Card title="내 활동" description="내가 직접 등록한 지출 (결제 취소 건 제외)">
         <dl className="grid grid-cols-2 gap-3">
           <div className="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900">
-            <dt className="text-sm text-zinc-500">이번 기수 등록</dt>
+            <dt className="text-sm text-zinc-500">올해 등록</dt>
             <dd className="mt-1 text-2xl font-bold tabular-nums">{mineThisTerm.length}건</dd>
             <dd className="text-sm text-zinc-500 tabular-nums">{formatWon(mineThisTerm.reduce((s, e) => s + Number(e.amount), 0))}</dd>
           </div>
@@ -125,13 +148,13 @@ async function MyContent() {
         </div>
       </Card>
 
-      <Card className="lg:col-span-2" title="내 직책" description="지금 활동 중인 학생회와 기수별 역할이에요.">
+      <Card className="lg:col-span-2" title="내 직책" description="지금 활동 중인 학생회와 연도별 역할이에요.">
         {active.length > 0 ? (
           <ul className="grid gap-3 md:grid-cols-2">
             {active.map((m) => (
               <li key={m.id} className="space-y-2 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
                 <p className="text-sm text-zinc-500">
-                  {m.terms.organizations.school_name} · {m.terms.name}
+                  {m.terms.organizations.school_name} · {termLabel(m.terms.name)}
                 </p>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-lg font-semibold">{m.terms.organizations.name}</p>
@@ -141,6 +164,11 @@ async function MyContent() {
                 </div>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">{ROLE_DESCRIPTIONS[m.role]}</p>
                 {m.position && <p className="text-sm font-medium">{m.position}</p>}
+                {isManagerRole(m.role) ? (
+                  <p className="text-sm text-zinc-500">내 역할·직책은 학생회원 관리에서 바로 바꿀 수 있어요.</p>
+                ) : (
+                  <MyRoleRequest termId={m.terms.id} role={m.role} position={m.position} pending={pendingFor(m.id)} />
+                )}
                 <p className="text-sm text-zinc-500">
                   쓸 수 있는 기능:{" "}
                   {PERMISSIONS.filter((p) => can(m, p)).map((p) => PERMISSION_LABELS[p].label).join(", ") || "지출 등록만"}
@@ -154,12 +182,12 @@ async function MyContent() {
                       학생회 설정 →
                     </Link>
                   )}
-                  {isAdminRole(m.role) && (
+                  {isManagerRole(m.role) && (
                     <Link
                       href={`/members?org=${m.terms.organizations.id}`}
                       className="inline-block text-sm font-medium text-blue-600 underline-offset-4 hover:underline"
                     >
-                      학생회원 관리 →
+                      학생회원 관리 (내 직책 바꾸기) →
                     </Link>
                   )}
                 </div>
@@ -171,11 +199,11 @@ async function MyContent() {
         )}
         {past.length > 0 && (
           <details className="text-sm">
-            <summary className="cursor-pointer font-medium text-zinc-600 dark:text-zinc-400">지난 기수 {past.length}개</summary>
+            <summary className="cursor-pointer font-medium text-zinc-600 dark:text-zinc-400">지난 연도 {past.length}개</summary>
             <ul className="mt-2 space-y-1 text-zinc-600 dark:text-zinc-400">
               {past.map((m) => (
                 <li key={m.id}>
-                  {m.terms.organizations.name} · {m.terms.name} · {roleLabel(m.role)}
+                  {termOrgLabel(m.terms.name, m.terms.organizations.name)} · {roleLabel(m.role)}
                   {m.terms.ends_on ? ` (~${m.terms.ends_on})` : ""}
                 </li>
               ))}

@@ -7,11 +7,13 @@ import { parseRoster, type RosterError, type RosterRow } from "@/lib/roster-impo
 
 import {
   addParticipant,
+  assignDeposit,
   deleteEvent,
   deleteParticipant,
   importParticipants,
   recordFeeIncome,
   setParticipantFlag,
+  setParticipantsFlag,
   updateParticipant,
   type ParticipantInput,
 } from "../actions";
@@ -25,6 +27,10 @@ export type Participant = {
   attended: boolean;
   fields: Record<string, string>;
   memo: string;
+  /** 학회비 납부자라 참가비 면제 (납부로 체크됨) */
+  dues_exempt: boolean;
+  /** 입금 문자로 확인된 납부 */
+  paid_income_id: string | null;
 };
 
 const inputClass =
@@ -146,11 +152,13 @@ export function AddParticipant({ eventId, kind, extraFields }: { eventId: string
 type Filter = "all" | "unpaid" | "absent";
 
 export function RosterTable({
+  eventId,
   kind,
   extraFields,
   participants,
   canEdit,
 }: {
+  eventId: string;
   kind: EventKind;
   extraFields: string[];
   participants: Participant[];
@@ -159,6 +167,10 @@ export function RosterTable({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<"added" | "name" | "student">("added");
+  // 일괄 체크할 사람 (명단에서 빠진 사람은 자동으로 제외)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkPending, startBulk] = useTransition();
+  const [bulkMessage, setBulkMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const rows = useMemo(() => {
     const q = query.trim();
@@ -172,6 +184,47 @@ export function RosterTable({
     if (sort === "student") return [...list].sort((a, b) => a.student_no.localeCompare(b.student_no) || a.name.localeCompare(b.name, "ko"));
     return list;
   }, [participants, query, filter, sort]);
+
+  const selected = participants.filter((p) => selectedIds.has(p.id));
+  const visibleSelected = rows.filter((p) => selectedIds.has(p.id)).length;
+  const allVisibleSelected = rows.length > 0 && visibleSelected === rows.length;
+
+  function toggleOne(id: string) {
+    setBulkMessage(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** 지금 보이는(검색·필터된) 사람 전체 선택 / 해제 */
+  function toggleAllVisible() {
+    setBulkMessage(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) rows.forEach((p) => next.delete(p.id));
+      else rows.forEach((p) => next.add(p.id));
+      return next;
+    });
+  }
+
+  function applyBulk(flag: "paid" | "attended", value: boolean) {
+    const ids = selected.map((p) => p.id);
+    if (ids.length === 0) return;
+    setBulkMessage(null);
+    startBulk(async () => {
+      const result = await setParticipantsFlag(eventId, ids, flag, value);
+      if (result?.error) {
+        setBulkMessage({ ok: false, text: result.error });
+        return;
+      }
+      const what = flag === "paid" ? "납부" : "참석";
+      setBulkMessage({ ok: true, text: `${ids.length}명을 ${what} ${value ? "체크" : "해제"}했어요.` });
+      setSelectedIds(new Set());
+    });
+  }
 
   if (participants.length === 0) {
     return (
@@ -226,10 +279,90 @@ export function RosterTable({
         </div>
       </div>
 
+      {canEdit && (
+        <div
+          className={`space-y-3 rounded-2xl border p-3 ${
+            selected.length > 0
+              ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/50"
+              : "border-dashed border-zinc-300 dark:border-zinc-700"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleAllVisible}
+              disabled={rows.length === 0 || isBulkPending}
+              className="h-10 shrink-0 rounded-lg btn-brutal bg-white px-3 text-sm font-medium disabled:opacity-50 dark:bg-zinc-900"
+            >
+              {allVisibleSelected ? "전체 선택 해제" : `전체 선택 (${rows.length})`}
+            </button>
+            <p className="min-w-0 text-sm" aria-live="polite">
+              {selected.length > 0 ? (
+                <>
+                  <strong className="whitespace-nowrap text-blue-700 dark:text-blue-300">{selected.length}명 선택됨</strong>
+                </>
+              ) : (
+                <span className="text-zinc-500">왼쪽 칸에서 사람을 고르면 한꺼번에 체크할 수 있어요.</span>
+              )}
+            </p>
+          </div>
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <BulkButton onClick={() => applyBulk("paid", true)} disabled={isBulkPending} primary>
+                납부 체크
+              </BulkButton>
+              <BulkButton onClick={() => applyBulk("attended", true)} disabled={isBulkPending} primary>
+                참석 체크
+              </BulkButton>
+              <BulkButton onClick={() => applyBulk("paid", false)} disabled={isBulkPending}>
+                납부 해제
+              </BulkButton>
+              <BulkButton onClick={() => applyBulk("attended", false)} disabled={isBulkPending}>
+                참석 해제
+              </BulkButton>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={isBulkPending}
+                className="h-10 px-2 text-sm text-zinc-500 underline-offset-4 hover:underline"
+              >
+                선택 취소
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {(isBulkPending || bulkMessage) && (
+        <p
+          role={bulkMessage && !bulkMessage.ok ? "alert" : "status"}
+          className={`rounded-lg px-3 py-2 text-sm ${
+            bulkMessage && !bulkMessage.ok
+              ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+              : "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200"
+          }`}
+        >
+          {isBulkPending ? "처리하는 중…" : bulkMessage?.text}
+        </p>
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
         <table className="w-full min-w-[36rem] text-left">
           <thead className="bg-zinc-50 text-sm text-zinc-500 dark:bg-zinc-900">
             <tr>
+              {canEdit && (
+                <th className="w-10 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="보이는 사람 전체 선택"
+                    className="h-5 w-5 accent-blue-600"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = visibleSelected > 0 && !allVisibleSelected;
+                    }}
+                    onChange={toggleAllVisible}
+                  />
+                </th>
+              )}
               <th className="px-3 py-2 font-medium">이름</th>
               <th className="px-3 py-2 font-medium">학번</th>
               <th className="px-3 py-2 font-medium">학년</th>
@@ -245,13 +378,48 @@ export function RosterTable({
           </thead>
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {rows.map((p) => (
-              <RosterRowView key={p.id} p={p} kind={kind} extraFields={extraFields} canEdit={canEdit} />
+              <RosterRowView
+                key={p.id}
+                p={p}
+                kind={kind}
+                extraFields={extraFields}
+                canEdit={canEdit}
+                selected={selectedIds.has(p.id)}
+                onSelect={() => toggleOne(p.id)}
+              />
             ))}
           </tbody>
         </table>
       </div>
       {rows.length === 0 && <p className="text-center text-sm text-zinc-500">조건에 맞는 사람이 없어요.</p>}
     </div>
+  );
+}
+
+function BulkButton({
+  children,
+  onClick,
+  disabled,
+  primary = false,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled: boolean;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        primary
+          ? "h-10 rounded-full btn-glow bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          : "h-10 rounded-lg btn-brutal bg-white px-3 text-sm font-medium disabled:opacity-60 dark:bg-zinc-900"
+      }
+    >
+      {children}
+    </button>
   );
 }
 
@@ -286,7 +454,21 @@ function FlagBox({ id, flag, value, label, disabled }: { id: string; flag: "paid
   );
 }
 
-function RosterRowView({ p, kind, extraFields, canEdit }: { p: Participant; kind: EventKind; extraFields: string[]; canEdit: boolean }) {
+function RosterRowView({
+  p,
+  kind,
+  extraFields,
+  canEdit,
+  selected,
+  onSelect,
+}: {
+  p: Participant;
+  kind: EventKind;
+  extraFields: string[];
+  canEdit: boolean;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState<ParticipantInput>({
     name: p.name,
@@ -301,7 +483,7 @@ function RosterRowView({ p, kind, extraFields, canEdit }: { p: Participant; kind
   if (editing) {
     return (
       <tr className="bg-blue-50/40 dark:bg-blue-950/20">
-        <td colSpan={extraFields.length + 6} className="space-y-2 px-3 py-3">
+        <td colSpan={extraFields.length + 7} className="space-y-2 px-3 py-3">
           {error && <ErrorText>{error}</ErrorText>}
           <ParticipantFields kind={kind} extraFields={extraFields} value={value} onChange={setValue} />
           <div className="flex flex-wrap items-center gap-3">
@@ -344,7 +526,18 @@ function RosterRowView({ p, kind, extraFields, canEdit }: { p: Participant; kind
   }
 
   return (
-    <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-900">
+    <tr className={selected ? "bg-blue-50 dark:bg-blue-950/40" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"}>
+      {canEdit && (
+        <td className="px-3 py-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onSelect}
+            aria-label={`${p.name} 선택`}
+            className="h-5 w-5 accent-blue-600"
+          />
+        </td>
+      )}
       <td className="px-3 py-2 font-medium">{p.name}</td>
       <td className="px-3 py-2 tabular-nums">{p.student_no}</td>
       <td className="px-3 py-2 text-zinc-500">{p.grade ?? "-"}</td>
@@ -355,6 +548,11 @@ function RosterRowView({ p, kind, extraFields, canEdit }: { p: Participant; kind
       ))}
       <td className="px-3 py-2 text-center">
         <FlagBox id={p.id} flag="paid" value={p.paid} label={`${p.name} 납부`} disabled={!canEdit} />
+        {p.dues_exempt ? (
+          <span className="block whitespace-nowrap text-xs text-green-700 dark:text-green-300">학회비 면제</span>
+        ) : p.paid_income_id ? (
+          <span className="block whitespace-nowrap text-xs text-blue-700 dark:text-blue-300">입금 확인</span>
+        ) : null}
       </td>
       <td className="px-3 py-2 text-center">
         <FlagBox id={p.id} flag="attended" value={p.attended} label={`${p.name} 참석`} disabled={!canEdit} />
@@ -376,7 +574,12 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<{ rows: RosterRow[]; errors: RosterError[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<{ added: number; exempt: number } | null>(null);
+  const [allAttended, setAllAttended] = useState(false);
+  const [allPaid, setAllPaid] = useState(false);
+  // 시트에 납부·참석 칸이 있었는지 (있으면 그 값대로 체크)
+  const sheetHasPaid = Boolean(preview?.rows.some((r) => r.paid !== undefined));
+  const sheetHasAttended = Boolean(preview?.rows.some((r) => r.attended !== undefined));
 
   return (
     <div className="space-y-3">
@@ -397,6 +600,20 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
         aria-label="붙여 넣을 명단"
         className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-blue-600 dark:border-zinc-700 dark:bg-zinc-900"
       />
+      <fieldset className="space-y-1 text-sm">
+        <legend className="sr-only">가져올 때 체크</legend>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={allAttended} onChange={(e) => setAllAttended(e.target.checked)} className="h-5 w-5 accent-blue-600" />
+          가져온 사람 모두 <strong>참석</strong>으로 체크
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={allPaid} onChange={(e) => setAllPaid(e.target.checked)} className="h-5 w-5 accent-blue-600" />
+          가져온 사람 모두 <strong>납부</strong>로 체크
+        </label>
+        <p className="text-zinc-500">
+          끄면 시트의 &lsquo;참석&rsquo;·&lsquo;입금 여부&rsquo; 칸 값(O, 예, 완료 등)대로 체크해요. 학회비 납부자는 언제나 납부·면제로 들어가요.
+        </p>
+      </fieldset>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -415,13 +632,21 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
               startTransition(async () => {
                 const result = await importParticipants(
                   eventId,
-                  preview.rows.map(({ name, student_no, grade, fields }) => ({ name, student_no, grade, fields })),
+                  preview.rows.map(({ name, student_no, grade, fields, paid, attended }) => ({
+                    name,
+                    student_no,
+                    grade,
+                    fields,
+                    paid,
+                    attended,
+                  })),
+                  { allPaid, allAttended },
                 );
                 if (!result.ok) {
                   setError(result.error);
                   return;
                 }
-                setDone(result.added);
+                setDone({ added: result.added, exempt: result.exempt });
                 setText("");
                 setPreview(null);
               });
@@ -435,7 +660,8 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
       {error && <ErrorText>{error}</ErrorText>}
       {done !== null && (
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-950 dark:text-green-200">
-          {done}명을 명단에 넣었어요.
+          {done.added}명을 명단에 넣었어요.
+          {done.exempt > 0 && ` 그중 ${done.exempt}명은 학회비 납부자라 납부로 체크했어요.`}
         </p>
       )}
       {preview && (
@@ -446,6 +672,11 @@ export function PasteImport({ eventId, extraFields }: { eventId: string; extraFi
               <span className="text-amber-700 dark:text-amber-300"> · 가져오지 않는 줄 {preview.errors.length}개</span>
             )}
           </p>
+          {(sheetHasPaid || sheetHasAttended) && (
+            <p className="text-blue-700 dark:text-blue-300">
+              시트의 {[sheetHasPaid && "납부", sheetHasAttended && "참석"].filter(Boolean).join("·")} 칸을 찾았어요. 그 값대로 체크해요.
+            </p>
+          )}
           {preview.rows.length > 0 && (
             <ul className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
               {preview.rows.map((r) => (
@@ -561,5 +792,68 @@ export function DeleteEventButton({ eventId }: { eventId: string }) {
     >
       {isPending ? "지우는 중…" : "행사 지우기"}
     </button>
+  );
+}
+
+/** 자동으로 연결하지 못한 입금을 참가자에게 직접 연결 */
+export function DepositMatcher({
+  deposits,
+  unpaid,
+}: {
+  deposits: { incomeId: string; payer: string; amount: number; receivedOn: string }[];
+  unpaid: { id: string; label: string }[];
+}) {
+  return (
+    <ul className="space-y-3">
+      {deposits.map((d) => (
+        <DepositRow key={d.incomeId} deposit={d} unpaid={unpaid} />
+      ))}
+    </ul>
+  );
+}
+
+function DepositRow({
+  deposit,
+  unpaid,
+}: {
+  deposit: { incomeId: string; payer: string; amount: number; receivedOn: string };
+  unpaid: { id: string; label: string }[];
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [pick, setPick] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <li className="space-y-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+      <p>
+        <span className="font-medium">{deposit.payer || "입금자 이름 없음"}</span>{" "}
+        <span className="tabular-nums">{deposit.amount.toLocaleString("ko-KR")}원</span>{" "}
+        <span className="text-sm text-zinc-500">{deposit.receivedOn}</span>
+      </p>
+      <div className="flex gap-2">
+        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="누구의 입금인지" className={inputClass}>
+          <option value="">누구의 입금인가요?</option>
+          {unpaid.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={!pick || isPending}
+          onClick={() => {
+            setError(null);
+            startTransition(async () => {
+              const result = await assignDeposit(deposit.incomeId, pick);
+              if (result?.error) setError(result.error);
+            });
+          }}
+          className="h-11 shrink-0 rounded-full btn-glow bg-blue-600 px-4 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {isPending ? "연결 중…" : "납부로 연결"}
+        </button>
+      </div>
+      {error && <ErrorText>{error}</ErrorText>}
+    </li>
   );
 }

@@ -24,6 +24,7 @@ import { EventForm } from "../event-form";
 import {
   AddParticipant,
   DeleteEventButton,
+  DepositMatcher,
   ExportRoster,
   FeeIncomeButton,
   PasteImport,
@@ -98,7 +99,7 @@ async function EventContent({
     supabase.from("memberships").select("role, revoked_permissions").eq("term_id", event.term_id).eq("user_id", userId).maybeSingle(),
     supabase
       .from("event_participants")
-      .select("id, name, student_no, grade, paid, attended, fields, memo")
+      .select("id, name, student_no, grade, paid, attended, fields, memo, dues_exempt, paid_income_id")
       .eq("event_id", id)
       .order("created_at")
       .overrideTypes<Participant[], { merge: false }>(),
@@ -142,7 +143,7 @@ async function EventContent({
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           { label: "신청", value: `${participants.length}${event.capacity ? ` / ${event.capacity}` : ""}명` },
-          { label: "납부", value: `${paid.count}명` },
+          { label: "납부", value: `${paid.count + paid.exemptCount}명${paid.exemptCount > 0 ? ` (면제 ${paid.exemptCount})` : ""}` },
           { label: "참석", value: `${attendedCount}명` },
           { label: "납부 금액", value: formatWon(paid.amount) },
         ].map((s) => (
@@ -191,7 +192,7 @@ function RosterTab({ event, participants, canEdit }: { event: EventDetail; parti
           title={`명단 (${participants.length}명)`}
           actions={<ExportRoster eventName={event.name} extraFields={event.extra_fields} participants={participants} />}
         >
-          <RosterTable kind={event.kind} extraFields={event.extra_fields} participants={participants} canEdit={canEdit} />
+          <RosterTable eventId={event.id} kind={event.kind} extraFields={event.extra_fields} participants={participants} canEdit={canEdit} />
         </Card>
       </div>
       <div className="space-y-6 lg:sticky lg:top-24">
@@ -238,7 +239,7 @@ async function MoneyTab({
   event: EventDetail;
   participants: Participant[];
   canEdit: boolean;
-  paid: { count: number; amount: number };
+  paid: ReturnType<typeof paidTotal>;
 }) {
   const supabase = await createClient();
   const [{ data: expenses }, { data: income }] = await Promise.all([
@@ -257,7 +258,22 @@ async function MoneyTab({
   ]);
   const spent = (expenses ?? []).filter((e) => countsTowardTotal(e.status)).reduce((s, e) => s + e.amount, 0);
   const recordedIncome = income && !income.deleted_at ? Number(income.amount) : null;
-  const incomeForBalance = recordedIncome ?? paid.amount;
+  // 입금 문자로 확인된 납부는 이미 수입에 있고, 손으로 체크한 납부만 '별도 납입'으로 기록한다
+  const incomeForBalance = paid.depositAmount + (recordedIncome ?? paid.manualAmount);
+
+  // 자동으로 연결하지 못한 입금 (참가비와 금액이 맞는 것만)
+  const { data: unmatched } = canEdit
+    ? await supabase.rpc("event_unmatched_deposits", { p_event_id: event.id })
+    : { data: [] };
+  const deposits = ((unmatched ?? []) as { income_id: string; payer: string; amount: number; received_on: string }[]).map((d) => ({
+    incomeId: d.income_id,
+    payer: d.payer,
+    amount: Number(d.amount),
+    receivedOn: d.received_on,
+  }));
+  const unpaid = participants
+    .filter((p) => !p.paid && !p.dues_exempt)
+    .map((p) => ({ id: p.id, label: `${p.name} (${p.student_no})` }));
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
@@ -268,8 +284,24 @@ async function MoneyTab({
               <dt className="text-zinc-500">참가비 납부 ({paid.count}명)</dt>
               <dd className="font-semibold tabular-nums text-green-700 dark:text-green-400">{formatWon(paid.amount)}</dd>
             </div>
+            {paid.depositCount > 0 && (
+              <div className="flex justify-between pl-3 text-sm">
+                <dt className="text-zinc-500">└ 입금 문자로 확인 ({paid.depositCount}명, 수입에 자동 기록됨)</dt>
+                <dd className="tabular-nums">{formatWon(paid.depositAmount)}</dd>
+              </div>
+            )}
+            <div className="flex justify-between pl-3 text-sm">
+              <dt className="text-zinc-500">└ 직접 체크 ({paid.manualCount}명, 현금 등)</dt>
+              <dd className="tabular-nums">{formatWon(paid.manualAmount)}</dd>
+            </div>
+            {paid.exemptCount > 0 && (
+              <div className="flex justify-between pl-3 text-sm">
+                <dt className="text-zinc-500">└ 학회비 면제</dt>
+                <dd className="tabular-nums">{paid.exemptCount}명</dd>
+              </div>
+            )}
             <div className="flex justify-between">
-              <dt className="text-zinc-500">수입으로 기록한 금액</dt>
+              <dt className="text-zinc-500">직접 체크분을 수입으로 기록</dt>
               <dd className="tabular-nums">{recordedIncome === null ? "아직 안 함" : formatWon(recordedIncome)}</dd>
             </div>
             <div className="flex justify-between">
@@ -283,14 +315,22 @@ async function MoneyTab({
               </dd>
             </div>
           </dl>
-          {recordedIncome !== null && recordedIncome !== paid.amount && (
+          {recordedIncome !== null && recordedIncome !== paid.manualAmount && (
             <p className="text-sm text-amber-700 dark:text-amber-300">
-              기록한 수입과 지금 납부 금액이 달라요. 아래 버튼으로 맞출 수 있어요.
+              기록한 수입과 지금 직접 체크한 납부 금액이 달라요. 아래 버튼으로 맞출 수 있어요.
             </p>
           )}
           {canEdit && <FeeIncomeButton eventId={event.id} recorded={recordedIncome !== null} />}
           {participants.length === 0 && <p className="text-sm text-zinc-500">명단에서 납부를 체크하면 여기에 합계가 나와요.</p>}
         </Card>
+        {canEdit && deposits.length > 0 && (
+          <Card
+            title={`입금 확인 필요 (${deposits.length}건)`}
+            description="참가비와 금액은 맞는데 누구인지 확실하지 않은 입금이에요 (동명이인, 학번 없음, 친구 대신 입금 등). 누구의 입금인지 골라 주세요."
+          >
+            <DepositMatcher deposits={deposits} unpaid={unpaid} />
+          </Card>
+        )}
       </div>
       <Card
         title="이 행사의 지출"
@@ -317,7 +357,7 @@ function InfoTab({ event, canEdit }: { event: EventDetail; canEdit: boolean }) {
           <div>명단 추가 칸: {event.extra_fields.join(", ") || "없음"}</div>
           <div className="whitespace-pre-wrap">메모: {event.memo || "-"}</div>
         </dl>
-        {!event.terms.is_active && <p className="text-sm text-zinc-500">지난 기수의 행사라 고칠 수 없어요.</p>}
+        {!event.terms.is_active && <p className="text-sm text-zinc-500">지난 연도의 행사라 고칠 수 없어요.</p>}
       </Card>
     );
   }

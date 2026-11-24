@@ -11,7 +11,7 @@ export type ActiveMembership = {
   };
 };
 
-/** 내가 속한 학생회 중 '활성 기수'의 멤버십 목록 */
+/** 내가 속한 학생회 중 '활성 연도'의 멤버십 목록 */
 export async function getActiveMemberships(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("memberships")

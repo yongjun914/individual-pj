@@ -7,14 +7,14 @@ import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { unlinkKakaoUser } from "@/lib/kakao";
 import { PERMISSIONS, type Permission } from "@/lib/permissions";
-import { ADMIN_ROLES, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
+import { MANAGER_ROLES as MANAGERS, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 /** 실패하면 안내 문구, 성공하면 null */
 export type ActionError = { error: string } | null;
 
 const ROLES: MemberRole[] = ROLE_OPTIONS;
-const MANAGER_ROLES: MemberRole[] = ADMIN_ROLES;
+const MANAGER_ROLES: MemberRole[] = MANAGERS;
 const NO_PERMISSION = "권한이 없어요. 학회장·부학회장에게 권한을 요청해 주세요.";
 
 const isRole = (v: unknown): v is MemberRole => ROLES.includes(v as MemberRole);
@@ -43,6 +43,26 @@ export async function updateOrganization(orgId: string, schoolName: string, name
     .eq("id", orgId)
     .select("id");
   if (error) console.error("학생회 정보 수정 실패", error);
+  if (error || !affected(data)) return { error: NO_PERMISSION };
+
+  refresh();
+  return null;
+}
+
+// ---------------------------------------------------------------------
+// 연도 이름
+// ---------------------------------------------------------------------
+
+/** 올해 연도 이름 바꾸기 (예: "1" → "2026"). 학생회 설정 권한이 있어야 한다. */
+export async function renameTerm(termId: string, name: string): Promise<ActionError> {
+  if (!UUID.test(termId)) return { error: "잘못된 요청입니다." };
+  const next = name.trim();
+  if (!next || next.length > 50) return { error: "연도를 1~50자로 입력해 주세요. 예: 2026" };
+
+  await requireUserId("/settings");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("terms").update({ name: next }).eq("id", termId).eq("is_active", true).select("id");
+  if (error) console.error("연도 이름 변경 실패", error);
   if (error || !affected(data)) return { error: NO_PERMISSION };
 
   refresh();
@@ -99,8 +119,8 @@ export async function revokeInvitation(invitationId: string): Promise<ActionErro
 export type MemberAccess = { role: string; position: string; revoked: string[] };
 
 /**
- * 학생회원 관리: 역할·부서/직책·기능 권한을 한 번에 바꾼다 (학회장·부학회장·총무만, DB에서도 검사).
- * 내 역할은 바꿀 수 없다 (관리 권한을 잃지 않게). 내 직책 이름은 바꿀 수 있다.
+ * 학생회원 관리: 역할·부서/직책·기능 권한을 한 번에 바꾼다 (학회장·부학회장만, DB에서도 검사).
+ * 내 역할도 바꿀 수 있다. 단, 학회장·부학회장이 한 명은 남아야 한다 (DB 트리거가 막는다).
  */
 export async function updateMemberAccess(membershipId: string, access: MemberAccess): Promise<ActionError> {
   if (!UUID.test(membershipId) || !isRole(access.role)) return { error: "잘못된 요청입니다." };
@@ -108,14 +128,8 @@ export async function updateMemberAccess(membershipId: string, access: MemberAcc
   if (position.length > 50) return { error: "부서·직책은 50자 이내로 입력해 주세요." };
   const revoked = [...new Set(access.revoked)].filter((p): p is Permission => PERMISSIONS.includes(p as Permission));
 
-  const userId = await requireUserId("/members");
+  await requireUserId("/members");
   const supabase = await createClient();
-
-  const { data: target } = await supabase.from("memberships").select("user_id, role").eq("id", membershipId).maybeSingle();
-  if (!target) return { error: "멤버를 찾을 수 없어요." };
-  if (target.user_id === userId && target.role !== access.role) {
-    return { error: "내 역할은 바꿀 수 없어요. 다른 학회장·부학회장에게 부탁해 주세요." };
-  }
 
   const { data, error } = await supabase
     .from("memberships")
@@ -123,6 +137,7 @@ export async function updateMemberAccess(membershipId: string, access: MemberAcc
     .eq("id", membershipId)
     .select("id");
   if (error) console.error("멤버 권한 변경 실패", error);
+  if (error && /한 명은 있어야/.test(error.message)) return { error: error.message };
   if (error || !affected(data)) return { error: "학생회원 관리는 학회장·부학회장만 할 수 있어요." };
 
   refresh();
@@ -265,14 +280,14 @@ export async function moveCategory(categoryId: string, direction: "up" | "down")
 }
 
 // ---------------------------------------------------------------------
-// 기수 전환
+// 연도 전환
 // ---------------------------------------------------------------------
 
 export type StartTermResult = { ok: true; carried: number } | { ok: false; error: string };
 
 /**
- * 새 기수 시작: 지금 기수를 닫고(읽기 전용) 새 기수를 연다. 카테고리는 함께 옮겨진다.
- * 고른 멤버는 같은 역할로 새 기수에 넣는다 (나머지는 새 초대 링크로 들어와야 한다).
+ * 새 연도 시작: 지금 연도를 닫고(읽기 전용) 새 연도를 연다. 카테고리는 함께 옮겨진다.
+ * 고른 멤버는 같은 역할로 새 연도에 넣는다 (나머지는 새 초대 링크로 들어와야 한다).
  */
 export async function startNewTerm(
   orgId: string,
@@ -282,21 +297,21 @@ export async function startNewTerm(
 ): Promise<StartTermResult> {
   const name = termName.trim();
   if (!UUID.test(orgId)) return { ok: false, error: "잘못된 요청입니다." };
-  if (!name || name.length > 50) return { ok: false, error: "새 기수 이름을 1~50자로 입력해 주세요." };
-  if (!MANAGER_ROLES.includes(myRole as MemberRole)) return { ok: false, error: "새 기수에서 내 역할은 학회장·부학회장·총무 중 하나여야 해요." };
+  if (!name || name.length > 50) return { ok: false, error: "새 연도를 1~50자로 입력해 주세요." };
+  if (!MANAGER_ROLES.includes(myRole as MemberRole)) return { ok: false, error: "새 연도에서 내 역할은 학회장·부학회장 중 하나여야 해요." };
   if (!carryMembershipIds.every((id) => UUID.test(id))) return { ok: false, error: "잘못된 요청입니다." };
 
   const userId = await requireUserId("/settings");
   const supabase = await createClient();
 
-  // 옮길 멤버는 전환 전에 읽어 둔다 (지금 기수의 멤버만)
+  // 옮길 멤버는 전환 전에 읽어 둔다 (올해의 멤버만)
   const { data: oldTerm } = await supabase
     .from("terms")
     .select("id")
     .eq("organization_id", orgId)
     .eq("is_active", true)
     .maybeSingle();
-  if (!oldTerm) return { ok: false, error: "현재 기수를 찾을 수 없어요." };
+  if (!oldTerm) return { ok: false, error: "현재 연도를 찾을 수 없어요." };
 
   const { data: carry } =
     carryMembershipIds.length > 0
@@ -313,8 +328,8 @@ export async function startNewTerm(
     p_my_role: myRole,
   });
   if (error || !newTermId) {
-    console.error("기수 전환 실패", error);
-    return { ok: false, error: "기수를 전환하지 못했어요. 학회장·부학회장만 할 수 있어요." };
+    console.error("연도 전환 실패", error);
+    return { ok: false, error: "연도를 전환하지 못했어요. 학회장·부학회장만 할 수 있어요." };
   }
 
   const rows = (carry ?? [])
@@ -325,7 +340,7 @@ export async function startNewTerm(
     const { error: carryError } = await supabase.from("memberships").insert(rows);
     if (carryError) {
       console.error("멤버 옮기기 실패", carryError);
-      return { ok: false, error: "새 기수는 만들었지만 멤버를 옮기지 못했어요. 초대 링크로 다시 초대해 주세요." };
+      return { ok: false, error: "새 연도는 만들었지만 멤버를 옮기지 못했어요. 초대 링크로 다시 초대해 주세요." };
     }
   }
 

@@ -12,6 +12,7 @@ import { UUID } from "@/lib/expense-input";
 import { formatWon, todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
+import { termLabel } from "@/lib/terms";
 
 import { AuditDownloads } from "./downloads";
 
@@ -75,7 +76,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
 
   const termParam = typeof params.term === "string" && UUID.test(params.term) ? params.term : null;
   const term = (terms ?? []).find((t) => t.id === termParam) ?? (terms ?? []).find((t) => t.is_active);
-  if (!term) return <p className="text-sm text-zinc-500">기수를 찾을 수 없어요.</p>;
+  if (!term) return <p className="text-sm text-zinc-500">연도를 찾을 수 없어요.</p>;
 
   const today = todayInSeoul();
   let from = isDate(params.from) ? params.from : (term.starts_on ?? `${today.slice(0, 4)}-01-01`);
@@ -151,11 +152,11 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         <p className="font-semibold">1. 감사 기간 고르기</p>
         <input type="hidden" name="org" value={org.id} />
         <label className="block space-y-1">
-          <span className="text-sm text-zinc-500">기수</span>
+          <span className="text-sm text-zinc-500">연도</span>
           <select name="term" defaultValue={term.id} className={fieldClass}>
             {(terms ?? []).map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name}
+                {termLabel(t.name)}
                 {t.is_active ? " (지금)" : ""}
               </option>
             ))}
@@ -211,7 +212,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         <AuditDownloads
           report={report}
           errorCount={errorCount}
-          meta={{ schoolName: org.school_name, orgName: org.name, termName: term.name, from, to }}
+          meta={{ schoolName: org.school_name, orgName: org.name, termName: termLabel(term.name), from, to }}
         />
       </section>
       </div>

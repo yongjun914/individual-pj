@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type IncomeResult = { ok: true; id: string } | { ok: false; error?: string; fieldErrors?: IncomeFieldErrors };
 
-const NO_PERMISSION = "현재 기수의 총무·회장만 수입을 기록할 수 있어요.";
+const NO_PERMISSION = "올해의 총무·회장만 수입을 기록할 수 있어요.";
 
 export async function createIncome(input: IncomeInput): Promise<IncomeResult> {
   const fieldErrors = validateIncomeInput(input);

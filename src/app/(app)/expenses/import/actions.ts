@@ -90,7 +90,7 @@ export async function importExpenses(termId: string, rows: ImportRow[]): Promise
   const supabase = await createClient();
 
   const { data: term } = await supabase.from("terms").select("id, is_active").eq("id", termId).maybeSingle();
-  if (!term || !term.is_active) return { ok: false, error: "이 학생회의 현재 기수에 지출을 등록할 수 없습니다." };
+  if (!term || !term.is_active) return { ok: false, error: "이 학생회의 현재 연도에 지출을 등록할 수 없습니다." };
 
   const { data, error } = await supabase
     .from("expenses")

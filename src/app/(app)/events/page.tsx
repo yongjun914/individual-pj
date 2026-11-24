@@ -84,11 +84,12 @@ async function EventsContent() {
 
   return (
     <>
-      {canCreate && (
-        <div className="-mt-2 flex flex-wrap gap-2">
-          <ButtonLink href="/events/new">+ 새 행사</ButtonLink>
-        </div>
-      )}
+      <div className="-mt-2 flex flex-wrap gap-2">
+        {canCreate && <ButtonLink href="/events/new">+ 새 행사</ButtonLink>}
+        <ButtonLink href="/events/dues" variant="secondary">
+          학회비 납부자 명단
+        </ButtonLink>
+      </div>
 
       {(events ?? []).length === 0 ? (
         <div className="space-y-3 rounded-2xl border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">

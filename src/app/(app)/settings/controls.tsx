@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { PERMISSION_LABELS, PERMISSIONS, type Permission } from "@/lib/permissions";
-import { ADMIN_ROLES, isAdminRole, ROLE_LABELS, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
+import { isAdminRole, isManagerRole, MANAGER_ROLES, ROLE_LABELS, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
 
 import {
   addCategory,
@@ -12,6 +12,7 @@ import {
   deleteCategory,
   deleteMyAccount,
   moveCategory,
+  renameTerm,
   removeMember,
   renameCategory,
   revokeInvitation,
@@ -87,6 +88,47 @@ export function OrgInfoForm({ orgId, schoolName, name }: { orgId: string; school
         </button>
         {saved && !changed && <span className="text-sm text-zinc-500">저장했어요.</span>}
       </div>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------
+// 연도 이름
+// ---------------------------------------------------------------------
+
+export function TermNameForm({ termId, name }: { termId: string; name: string }) {
+  const { isPending, error, run } = useAction();
+  const [value, setValue] = useState(name);
+  const [saved, setSaved] = useState(false);
+  const changed = value.trim() !== name;
+
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setSaved(false);
+        run(() => renameTerm(termId, value), () => setSaved(true));
+      }}
+    >
+      {error && <ErrorText>{error}</ErrorText>}
+      <label className="block space-y-1">
+        <span className="text-sm text-zinc-500">올해 연도 (숫자만 쓰면 &apos;2026년&apos;처럼 보여요)</span>
+        <div className="flex gap-2">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            maxLength={50}
+            inputMode="numeric"
+            placeholder="예: 2026"
+            className={inputClass}
+          />
+          <button type="submit" disabled={isPending || !changed || !value.trim()} className={primaryButton}>
+            {isPending ? "저장 중…" : "저장"}
+          </button>
+        </div>
+      </label>
+      {saved && !changed && <p className="text-sm text-zinc-500">저장했어요.</p>}
     </form>
   );
 }
@@ -270,7 +312,7 @@ export function MemberAccessRow({
             disabled={isPending}
             className={`${linkButton} text-red-600`}
             onClick={() => {
-              if (confirm(`${name}님을 이번 기수에서 내보낼까요? 등록한 기록은 그대로 남아요.`)) {
+              if (confirm(`${name}님을 올해 명단에서 내보낼까요? 등록한 기록은 그대로 남아요.`)) {
                 run(() => removeMember(membershipId));
               }
             }}
@@ -281,10 +323,10 @@ export function MemberAccessRow({
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="block space-y-1">
-          <span className="text-sm text-zinc-500">역할</span>
+          <span className="text-sm text-zinc-500">역할{isMe ? " (내 역할도 바꿀 수 있어요)" : ""}</span>
           <select
             value={nextRole}
-            disabled={isPending || isMe}
+            disabled={isPending}
             onChange={(e) => {
               setSaved(false);
               setNextRole(e.target.value as MemberRole);
@@ -316,7 +358,7 @@ export function MemberAccessRow({
       </div>
       <fieldset className="space-y-2">
         <legend className="text-sm text-zinc-500">
-          기능 권한 {admin ? "(학회장·부학회장·총무는 모든 기능을 써요)" : "(체크를 끄면 그 기능을 못 써요)"}
+          기능 권한 {admin ? "(학회장·부학회장·총무는 항상 모든 기능을 써요)" : "(체크를 끄면 그 기능을 못 써요)"}
         </legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {PERMISSIONS.map((p) => (
@@ -345,12 +387,20 @@ export function MemberAccessRow({
         <button
           type="button"
           disabled={isPending || !changed}
-          onClick={() =>
+          onClick={() => {
+            if (
+              isMe &&
+              isManagerRole(role) &&
+              !isManagerRole(nextRole) &&
+              !confirm("내 역할을 학회장·부학회장이 아닌 역할로 바꾸면 학생회원 관리를 더 이상 못 해요. 바꿀까요?")
+            ) {
+              return;
+            }
             run(
               () => updateMemberAccess(membershipId, { role: nextRole, position: nextPosition, revoked: [...nextRevoked] }),
               () => setSaved(true),
-            )
-          }
+            );
+          }}
           className={primaryButton}
         >
           {isPending ? "저장하는 중…" : "저장"}
@@ -495,7 +545,7 @@ function CategoryRow({ category, first, last }: { category: CategoryItem; first:
 }
 
 // ---------------------------------------------------------------------
-// 기수 전환
+// 연도 전환
 // ---------------------------------------------------------------------
 
 type CarryMember = { membershipId: string; name: string; role: MemberRole; isMe: boolean };
@@ -515,7 +565,7 @@ export function StartTermForm({
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [termName, setTermName] = useState("");
-  const [role, setRole] = useState<MemberRole>(isAdminRole(myRole) ? myRole : "president");
+  const [role, setRole] = useState<MemberRole>(isManagerRole(myRole) ? myRole : "president");
   const others = members.filter((m) => !m.isMe);
   const [carry, setCarry] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -534,7 +584,7 @@ export function StartTermForm({
           onClick={() => setOpen(true)}
           className="h-11 w-full rounded-lg btn-brutal bg-white dark:bg-zinc-900 font-medium"
         >
-          새 기수 시작하기
+          새 연도 시작하기
         </button>
       </div>
     );
@@ -547,7 +597,7 @@ export function StartTermForm({
         e.preventDefault();
         if (
           !confirm(
-            `'${currentTermName}'을(를) 닫고 '${termName.trim()}'을(를) 시작할까요?\n지난 기수 자료는 읽기만 가능해지고, 되돌릴 수 없어요.`,
+            `'${currentTermName}'을(를) 닫고 '${termName.trim()}'을(를) 시작할까요?\n지난 연도 자료는 읽기만 가능해지고, 되돌릴 수 없어요.`,
           )
         ) {
           return;
@@ -562,8 +612,8 @@ export function StartTermForm({
           setOpen(false);
           setDone(
             result.carried > 0
-              ? `새 기수를 시작했어요. 멤버 ${result.carried}명을 함께 옮겼어요.`
-              : "새 기수를 시작했어요. 새 멤버는 초대 링크로 초대해 주세요.",
+              ? `새 연도를 시작했어요. 멤버 ${result.carried}명을 함께 옮겼어요.`
+              : "새 연도를 시작했어요. 새 멤버는 초대 링크로 초대해 주세요.",
           );
           router.refresh();
         });
@@ -572,26 +622,26 @@ export function StartTermForm({
       {error && <ErrorText>{error}</ErrorText>}
       <div className="space-y-1 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
         <p>
-          지금 기수(<strong>{currentTermName}</strong>)의 지출은 그대로 남지만 더 이상 고칠 수 없어요. 행사 목록은 새
-          기수로 복사돼요.
+          지금 연도(<strong>{currentTermName}</strong>)의 지출은 그대로 남지만 더 이상 고칠 수 없어요. 행사 목록은 새
+          연도로 복사돼요.
         </p>
         <p>결제 문자 연동 토큰은 학생회에 붙어 있어서 그대로 쓰여요. 명의가 바뀌었다면 폐기하고 새로 발급해 주세요.</p>
       </div>
       <label className="block space-y-1">
-        <span className="text-sm text-zinc-500">새 기수 이름</span>
+        <span className="text-sm text-zinc-500">새 연도</span>
         <input
           value={termName}
           onChange={(e) => setTermName(e.target.value)}
           maxLength={50}
-          placeholder="예: 2027년 제39대"
+          placeholder="예: 2027"
           className={inputClass}
           required
         />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm text-zinc-500">새 기수에서 내 역할</span>
+        <span className="text-sm text-zinc-500">새 연도에서 내 역할</span>
         <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className={inputClass}>
-          {ADMIN_ROLES.map((r) => (
+          {MANAGER_ROLES.map((r) => (
             <option key={r} value={r}>
               {ROLE_LABELS[r]}
             </option>
@@ -600,7 +650,7 @@ export function StartTermForm({
       </label>
       {others.length > 0 && (
         <fieldset className="space-y-2">
-          <legend className="text-sm text-zinc-500">새 기수로 함께 옮길 멤버 (같은 역할로)</legend>
+          <legend className="text-sm text-zinc-500">새 연도로 함께 옮길 멤버 (같은 역할로)</legend>
           {others.map((m) => (
             <label key={m.membershipId} className="flex items-center gap-3 text-sm">
               <input
@@ -623,7 +673,7 @@ export function StartTermForm({
       )}
       <div className="flex items-center gap-3">
         <button type="submit" disabled={isPending || !termName.trim()} className={`${primaryButton} flex-1`}>
-          {isPending ? "전환하는 중…" : "새 기수 시작"}
+          {isPending ? "전환하는 중…" : "새 연도 시작"}
         </button>
         <button type="button" onClick={() => setOpen(false)} className={`${linkButton} text-zinc-500`}>
           취소

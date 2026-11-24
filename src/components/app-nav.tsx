@@ -10,8 +10,10 @@ export type NavUser = {
   name: string;
   /** 대표 학생회 이름과 직책 (예: "전자공학과 학생회 · 총무") */
   subtitle: string | null;
-  /** 학회장·부학회장·총무: 학생회원 관리 메뉴가 보인다 */
+  /** 학회장·부학회장: 학생회원 관리 메뉴가 보인다 */
   isAdmin: boolean;
+  /** 처리할 직책 변경 요청 수 (학회장·부학회장) */
+  pendingRequests: number;
   canAudit: boolean;
   canSettings: boolean;
 };
@@ -82,6 +84,7 @@ export function TopBar({ user }: { user: NavUser | null }) {
               }`}
             >
               {item.label}
+              {item.need === "admin" && user && user.pendingRequests > 0 && <RequestBadge count={user.pendingRequests} />}
             </Link>
           ))}
         </nav>
@@ -166,6 +169,9 @@ export function TopBar({ user }: { user: NavUser | null }) {
                   }`}
                 >
                   {item.label}
+                  {"need" in item && item.need === "admin" && user && user.pendingRequests > 0 && (
+                    <RequestBadge count={user.pendingRequests} />
+                  )}
                 </Link>
               </li>
             ))}
@@ -178,6 +184,17 @@ export function TopBar({ user }: { user: NavUser | null }) {
         </nav>
       )}
     </header>
+  );
+}
+
+function RequestBadge({ count }: { count: number }) {
+  return (
+    <span
+      aria-label={`처리할 요청 ${count}건`}
+      className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 align-middle text-xs font-bold text-white"
+    >
+      {count}
+    </span>
   );
 }
 

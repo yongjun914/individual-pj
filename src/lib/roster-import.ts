@@ -13,6 +13,9 @@ export type RosterRow = {
   student_no: string;
   grade: number | null;
   fields: Record<string, string>;
+  /** 시트에 납부·참석 칸이 있을 때만 값이 있다 */
+  paid?: boolean;
+  attended?: boolean;
 };
 
 export type RosterError = { line: number; text: string; reason: string };
@@ -21,6 +24,8 @@ export type RosterError = { line: number; text: string; reason: string };
 const NAME_HEADERS = /^(이름|성명|성함|name)$/i;
 const STUDENT_HEADERS = /^(학번|입학년도|입학\s*연도|student\s*(no|id))$/i;
 const GRADE_HEADERS = /^(학년|grade)$/i;
+const PAID_HEADERS = /^(납부|입금|회비|참가비)(\s*(여부|확인|완료|상태))?$/;
+const ATTEND_HEADERS = /^(참석|출석|참여)(\s*(여부|확인|상태))?$/;
 const IGNORE_HEADERS = /^(타임스탬프|timestamp|이메일 주소|email address)$/i;
 
 /** 추가 칸 이름과 비슷한 머리글 */
@@ -42,6 +47,14 @@ function cleanHeader(h: string) {
     .trim();
 }
 
+/** 시트의 O·예·완료 같은 표시를 체크로 본다 */
+export function isYes(value: string | undefined) {
+  const v = (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!v) return false;
+  if (/^(x|×|n|no|아니요|아니오|미납|불참|미참석|false|0|-)$/.test(v)) return false;
+  return /^(o|○|◯|●|y|yes|예|네|ㅇ|ㅇㅇ|true|1|v|✓|✔|☑|✅)$/.test(v) || /(완료|했음|함$|참석|납부|입금)/.test(v);
+}
+
 function splitLine(line: string) {
   return line.includes("\t") ? line.split("\t") : line.split(",");
 }
@@ -59,11 +72,15 @@ export function parseRoster(text: string, extraFields: string[]): { rows: Roster
   const hasHeader = firstCells.some((c) => NAME_HEADERS.test(c));
   let col = { name: 0, student: 1, grade: 2 as number | null };
   const fieldCols = new Map<string, number>();
+  let paidCol = -1;
+  let attendCol = -1;
 
   if (hasHeader) {
     const find = (re: RegExp) => firstCells.findIndex((c) => re.test(c));
     const gradeIdx = find(GRADE_HEADERS);
     col = { name: find(NAME_HEADERS), student: find(STUDENT_HEADERS), grade: gradeIdx >= 0 ? gradeIdx : null };
+    paidCol = find(PAID_HEADERS);
+    attendCol = find(ATTEND_HEADERS);
     for (const field of extraFields) {
       const re = FIELD_SYNONYMS[field];
       const idx = firstCells.findIndex((c, i) => !IGNORE_HEADERS.test(c) && (c === field || (re ? re.test(c) : false)) && i !== col.name);
@@ -108,6 +125,8 @@ export function parseRoster(text: string, extraFields: string[]): { rows: Roster
       student_no: studentNo,
       grade: col.grade === null ? null : normalizeGrade(cells[col.grade]),
       fields,
+      ...(paidCol >= 0 ? { paid: isYes(cells[paidCol]) } : {}),
+      ...(attendCol >= 0 ? { attended: isYes(cells[attendCol]) } : {}),
     });
   }
 

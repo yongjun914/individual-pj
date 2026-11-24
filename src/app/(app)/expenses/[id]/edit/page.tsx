@@ -7,6 +7,7 @@ import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import { ExpenseForm, type CategoryOption } from "../../new/expense-form";
 import { getExpenseDetail } from "../data";
@@ -50,7 +51,7 @@ async function EditContent({ params }: { params: PageProps<"/expenses/[id]/edit"
         </Link>
       </div>
       <ExpenseForm
-        terms={[{ id: expense.term_id, label: `${expense.terms.organizations.name} · ${expense.terms.name}` }]}
+        terms={[{ id: expense.term_id, label: `${termOrgLabel(expense.terms.name, expense.terms.organizations.name)}` }]}
         categories={categories ?? []}
         today={todayInSeoul()}
         expense={{

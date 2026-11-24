@@ -37,7 +37,7 @@ const MESSAGES: Record<IngestResult["result"], string> = {
   duplicate: "이미 받은 문자예요.",
   unparsed: "문자를 받았지만 해석하지 못했어요. 결제 연동 화면의 수신 기록을 확인해 주세요.",
   cancel_unmatched: "취소 문자를 받았지만 맞는 지출을 찾지 못했어요.",
-  no_active_term: "현재 기수가 없어 지출을 만들지 못했어요.",
+  no_active_term: "현재 연도가 없어 지출을 만들지 못했어요.",
   invalid_token: "토큰이 올바르지 않거나 폐기되었어요.",
   bad_request: "요청 내용을 확인해 주세요.",
 };

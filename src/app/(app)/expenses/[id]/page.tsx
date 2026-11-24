@@ -9,6 +9,7 @@ import { describeChanges, type AuditLogRow } from "@/lib/expense-history";
 import { MAX_RECEIPTS, PAYMENT_METHOD_LABELS, STATUS_LABELS } from "@/lib/expenses";
 import { formatDateTime, formatLongDate, formatWon } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
+import { termLabel, termOrgLabel } from "@/lib/terms";
 
 import { DeleteExpenseButton, DeleteReceiptButton, MissingReasonPanel, ReceiptUploader } from "./controls";
 import { getExpenseDetail } from "./data";
@@ -116,13 +117,13 @@ async function DetailContent({
       )}
       {!expense.terms.is_active && (
         <p className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-          지난 기수({expense.terms.name})의 지출이라 고칠 수 없어요.
+          지난 연도({termLabel(expense.terms.name)})의 지출이라 고칠 수 없어요.
         </p>
       )}
 
       <section className="space-y-1 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
         <p className="text-sm text-zinc-500">
-          {expense.terms.organizations.name} · {expense.terms.name}
+          {termOrgLabel(expense.terms.name, expense.terms.organizations.name)}
         </p>
         <p className={`text-3xl font-semibold ${cancelled ? "text-zinc-400 line-through" : ""}`}>
           {formatWon(expense.amount)}

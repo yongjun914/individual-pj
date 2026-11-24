@@ -32,7 +32,7 @@ export type EditingExpense = ExpenseInput & { id: string };
 
 /**
  * 지출 등록·수정 폼.
- * `expense`를 넘기면 수정 모드: 기수는 바꿀 수 없고, 영수증은 상세 화면에서 따로 관리한다.
+ * `expense`를 넘기면 수정 모드: 연도는 바꿀 수 없고, 영수증은 상세 화면에서 따로 관리한다.
  */
 export function ExpenseForm({
   terms,
@@ -131,7 +131,7 @@ export function ExpenseForm({
         return;
       }
 
-      // 영수증 업로드: {학생회}/{기수}/{지출}/{파일}
+      // 영수증 업로드: {학생회}/{연도}/{지출}/{파일}
       const supabase = createClient();
       const uploaded: string[] = [];
       for (const [i, photo] of photos.entries()) {

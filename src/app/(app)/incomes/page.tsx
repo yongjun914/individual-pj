@@ -180,7 +180,7 @@ async function IncomesContent({ searchParams }: { searchParams: PageProps<"/inco
           </div>
         ) : (
           <p className="rounded-xl border border-dashed border-zinc-300 p-6 text-center text-zinc-500 dark:border-zinc-700">
-            {filtered ? "조건에 맞는 수입이 없어요." : "아직 기록한 수입이 없어요. 지난 기수에서 넘어온 돈은 '이월액'으로 넣어 주세요."}
+            {filtered ? "조건에 맞는 수입이 없어요." : "아직 기록한 수입이 없어요. 지난 연도에서 넘어온 돈은 '이월액'으로 넣어 주세요."}
           </p>
         )}
       </div>

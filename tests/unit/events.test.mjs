@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { eventStatus, jacketSummary, normalizeGrade, normalizeStudentNo, paidTotal } from "../../src/lib/events.ts";
-import { parseRoster } from "../../src/lib/roster-import.ts";
+import { isYes, parseRoster } from "../../src/lib/roster-import.ts";
 
 describe("학번 정리 (앞 2자리)", () => {
   test("여러 형식", () => {
@@ -57,10 +57,16 @@ describe("과잠 집계와 참가비", () => {
     });
   });
   test("과잠은 납부한 수량 × 가격", () => {
-    assert.deepEqual(paidTotal("jacket", 40000, rows), { count: 2, amount: 120000 });
+    assert.deepEqual(
+      { count: paidTotal("jacket", 40000, rows).count, amount: paidTotal("jacket", 40000, rows).amount },
+      { count: 2, amount: 120000 },
+    );
   });
   test("그 외는 납부 인원 × 참가비", () => {
-    assert.deepEqual(paidTotal("opening", 15000, rows), { count: 2, amount: 30000 });
+    assert.deepEqual(
+      { count: paidTotal("opening", 15000, rows).count, amount: paidTotal("opening", 15000, rows).amount },
+      { count: 2, amount: 30000 },
+    );
   });
 });
 
@@ -105,5 +111,24 @@ describe("명단 붙여 넣기", () => {
   test("비상 연락처는 '연락처'·'전화번호' 머리글도 알아봄", () => {
     const { rows } = parseRoster("성명\t학번\t전화번호\n홍길동\t24\t010-0000-0000", ["참가 일정", "비상 연락처"]);
     assert.deepEqual(rows[0].fields, { "비상 연락처": "010-0000-0000" });
+  });
+});
+
+describe("붙여 넣기의 납부·참석 칸", () => {
+  test("머리글에 납부·참석 칸이 있으면 값대로 체크", () => {
+    const { rows } = parseRoster("이름\t학번\t입금 여부\t참석\n홍길동\t24\tO\t참석\n이학생\t22\tX\t", []);
+    assert.equal(rows[0].paid, true);
+    assert.equal(rows[0].attended, true);
+    assert.equal(rows[1].paid, false);
+    assert.equal(rows[1].attended, false);
+  });
+  test("칸이 없으면 값을 정하지 않는다", () => {
+    const { rows } = parseRoster("이름\t학번\n홍길동\t24", []);
+    assert.equal(rows[0].paid, undefined);
+    assert.equal(rows[0].attended, undefined);
+  });
+  test("체크로 보는 표시", () => {
+    for (const v of ["O", "o", "○", "예", "네", "Y", "✓", "입금 완료", "납부함", "참석"]) assert.equal(isYes(v), true, v);
+    for (const v of ["", "X", "아니요", "미납", "불참", "-"]) assert.equal(isYes(v), false, v);
   });
 });

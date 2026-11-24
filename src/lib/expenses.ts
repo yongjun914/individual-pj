@@ -24,7 +24,7 @@ export function countsTowardTotal(status: ExpenseStatus) {
 export type SummaryRow = { term_id: string; amount: number; status: ExpenseStatus };
 export type TermSummary = { total: number; count: number };
 
-/** 기수별 지출 합계와 건수 (취소 건 제외) */
+/** 연도별 지출 합계와 건수 (취소 건 제외) */
 export function summarizeByTerm(rows: SummaryRow[]) {
   const result: Record<string, TermSummary> = {};
   for (const r of rows) {

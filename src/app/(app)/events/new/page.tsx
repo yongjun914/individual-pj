@@ -8,6 +8,7 @@ import { todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
 import { can } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import { EventForm } from "../event-form";
 
@@ -45,7 +46,7 @@ async function NewEventContent() {
 
   return (
     <EventForm
-      terms={allowed.map((m) => ({ id: m.terms.id, label: `${m.terms.organizations.name} · ${m.terms.name}` }))}
+      terms={allowed.map((m) => ({ id: m.terms.id, label: `${termOrgLabel(m.terms.name, m.terms.organizations.name)}` }))}
       year={Number(todayInSeoul().slice(0, 4))}
     />
   );

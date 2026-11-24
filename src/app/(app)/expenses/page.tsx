@@ -11,6 +11,7 @@ import { countsTowardTotal } from "@/lib/expenses";
 import { formatWon } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import {
   hasActiveFilter,
@@ -63,7 +64,7 @@ async function ExpensesContent({ searchParams }: { searchParams: PageProps<"/exp
   if (memberships.length === 0) redirect("/onboarding");
 
   const allTermIds = memberships.map((m) => m.terms.id);
-  // 내가 속하지 않은 기수 id가 들어오면 무시
+  // 내가 속하지 않은 연도 id가 들어오면 무시
   const termIds = filters.term && allTermIds.includes(filters.term) ? [filters.term] : allTermIds;
 
   const { data: categories } = await supabase
@@ -108,7 +109,7 @@ async function ExpensesContent({ searchParams }: { searchParams: PageProps<"/exp
       <aside className="lg:sticky lg:top-24">
         <FilterForm
           filters={filters}
-          terms={multiTerm ? memberships.map((m) => ({ id: m.terms.id, label: `${m.terms.organizations.name} · ${m.terms.name}` })) : []}
+          terms={multiTerm ? memberships.map((m) => ({ id: m.terms.id, label: `${termOrgLabel(m.terms.name, m.terms.organizations.name)}` })) : []}
           categories={categoryOptions.map((c) => ({
             id: c.id,
             label: multiTerm && termIds.length > 1 ? `${termName(c.term_id)} · ${c.name}` : c.name,

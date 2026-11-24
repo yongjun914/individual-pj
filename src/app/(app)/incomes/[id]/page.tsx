@@ -10,6 +10,7 @@ import { UUID } from "@/lib/expense-input";
 import { formatDateTime, formatLongDate, formatWon, todayInSeoul } from "@/lib/format";
 import { INCOME_METHOD_LABELS, type IncomeMethod } from "@/lib/income-input";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import { DeleteIncomeButton, IncomeForm } from "../income-form";
 
@@ -75,7 +76,7 @@ async function IncomeContent({ params }: { params: PageProps<"/incomes/[id]">["p
   const info = (
     <dl className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">
       <Row label="학생회">
-        {income.terms.organizations.name} · {income.terms.name}
+        {termOrgLabel(income.terms.name, income.terms.organizations.name)}
       </Row>
       <Row label="등록">
         {income.created_by
@@ -107,7 +108,7 @@ async function IncomeContent({ params }: { params: PageProps<"/incomes/[id]">["p
           <Row label="메모">{income.memo || "-"}</Row>
         </dl>
         {info}
-        {!income.terms.is_active && <p className="text-sm text-zinc-500">지난 기수의 수입이라 고칠 수 없어요.</p>}
+        {!income.terms.is_active && <p className="text-sm text-zinc-500">지난 연도의 수입이라 고칠 수 없어요.</p>}
       </>
     );
   }

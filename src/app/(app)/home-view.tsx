@@ -6,6 +6,7 @@ import type { TermSummary } from "@/lib/expenses";
 import { formatWon } from "@/lib/format";
 import type { ActiveMembership } from "@/lib/memberships";
 import { roleLabel } from "@/lib/roles";
+import { termLabel } from "@/lib/terms";
 
 export type RecentExpense = ExpenseListItem;
 
@@ -66,7 +67,7 @@ function StartGuide({ guide }: { guide: GuideState }) {
     {
       done: guide.hasIncome,
       title: "이월액·학회비 같은 수입 넣기",
-      detail: "지난 기수에서 넘어온 돈은 '이월액'으로 넣어요. 그래야 잔액이 맞아요.",
+      detail: "지난 연도에서 넘어온 돈은 '이월액'으로 넣어요. 그래야 잔액이 맞아요.",
       href: "/incomes/new",
       action: "수입 등록",
       show: guide.canIncome,
@@ -181,7 +182,7 @@ export function HomeView({
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
           <p className="text-zinc-500">{displayName ? `${displayName}님, 안녕하세요` : "안녕하세요"}</p>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">이번 기수 한눈에 보기</h1>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">올해 한눈에 보기</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <ButtonLink href="/expenses/new">+ 지출 등록</ButtonLink>
@@ -204,7 +205,7 @@ export function HomeView({
           <section key={m.terms.id} className="space-y-3">
             <p className="text-sm text-zinc-500">
               {m.terms.organizations.school_name} · <span className="font-semibold text-zinc-800 dark:text-zinc-200">{m.terms.organizations.name}</span> ·{" "}
-              {m.terms.name} · 내 직책 {m.position || roleLabel(m.role)}
+              {termLabel(m.terms.name)} · 내 직책 {m.position || roleLabel(m.role)}
             </p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Stat label="수입 (예산액)" value={formatWon(income)} href="/incomes" tone="green" />

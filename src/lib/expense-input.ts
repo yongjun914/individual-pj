@@ -38,7 +38,7 @@ export function validateExpenseInput(input: ExpenseInput): FieldErrors {
   return e;
 }
 
-/** 고른 행사가 같은 기수의 것인지 (미분류면 통과) */
+/** 고른 행사가 같은 연도의 것인지 (미분류면 통과) */
 export async function categoryBelongsToTerm(supabase: SupabaseClient, categoryId: string, termId: string) {
   if (!categoryId) return true;
   const { data } = await supabase
@@ -50,7 +50,7 @@ export async function categoryBelongsToTerm(supabase: SupabaseClient, categoryId
   return Boolean(data);
 }
 
-/** DB에 저장할 칸으로 바꾼다 (기수·작성자 제외) */
+/** DB에 저장할 칸으로 바꾼다 (연도·작성자 제외) */
 export function toExpenseColumns(input: ExpenseInput) {
   return {
     spent_on: input.spentOn,

@@ -16,9 +16,9 @@ import { createClient } from "@/lib/supabase/server";
 
 export type UpdateExpenseResult = { ok: true } | { ok: false; error?: string; fieldErrors?: FieldErrors };
 
-const NO_PERMISSION = "이 지출을 고칠 권한이 없거나, 이미 끝난 기수의 지출입니다.";
+const NO_PERMISSION = "이 지출을 고칠 권한이 없거나, 이미 끝난 연도의 지출입니다.";
 
-/** 지출 내용 수정. 기수·작성자·상태는 바꾸지 않는다. */
+/** 지출 내용 수정. 연도·작성자·상태는 바꾸지 않는다. */
 export async function updateExpense(expenseId: string, input: ExpenseInput): Promise<UpdateExpenseResult> {
   if (!UUID.test(expenseId)) return { ok: false, error: "잘못된 요청입니다." };
   const fieldErrors = validateExpenseInput(input);

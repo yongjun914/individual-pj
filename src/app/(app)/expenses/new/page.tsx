@@ -8,6 +8,7 @@ import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
+import { termOrgLabel } from "@/lib/terms";
 
 import { ExpenseForm, type CategoryOption, type TermOption } from "./expense-form";
 
@@ -38,7 +39,7 @@ async function NewExpenseContent() {
 
   const terms: TermOption[] = memberships.map((m) => ({
     id: m.terms.id,
-    label: `${m.terms.organizations.name} · ${m.terms.name}`,
+    label: `${termOrgLabel(m.terms.name, m.terms.organizations.name)}`,
   }));
 
   const { data: categories } = await supabase
