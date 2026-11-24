@@ -70,14 +70,14 @@ async function InviteContent({ params, searchParams }: PageProps<"/invite/[token
       {invite.already_member ? (
         <Link
           href="/"
-          className="flex h-12 items-center justify-center rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700"
+          className="flex h-12 items-center justify-center rounded-full btn-glow bg-blue-600 font-medium text-white hover:bg-blue-700"
         >
           이미 참여 중이에요 · 홈으로
         </Link>
       ) : (
         <form action={acceptInvitation}>
           <input type="hidden" name="token" value={token} />
-          <SubmitButton pendingText="참여하는 중…" className="bg-blue-600 text-white hover:bg-blue-700">
+          <SubmitButton pendingText="참여하는 중…" className="btn-glow bg-blue-600 text-white hover:bg-blue-700">
             참여하기
           </SubmitButton>
         </form>

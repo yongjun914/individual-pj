@@ -359,7 +359,7 @@ export function ImportFlow({ terms }: { terms: TermOption[] }) {
             type="button"
             onClick={submit}
             disabled={isPending || picked === 0}
-            className="h-12 w-full rounded-xl bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            className="h-12 w-full rounded-full btn-glow bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
             {isPending
               ? (status ?? "저장하는 중…")

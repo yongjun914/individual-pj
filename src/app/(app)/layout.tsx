@@ -3,7 +3,8 @@ import { Suspense } from "react";
 import { BottomTabBar, TopBar, TopBarPlaceholder, type NavUser } from "@/components/app-nav";
 import { getCurrentUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
-import { roleLabel } from "@/lib/roles";
+import { canAny } from "@/lib/permissions";
+import { isAdminRole, roleLabel } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 /** 로그인 뒤 화면 공통 틀: 상단 바 + 본문 + (휴대폰) 하단 탭 바 */
@@ -36,8 +37,12 @@ async function TopBarWithUser() {
   const first = memberships[0];
   const user: NavUser = {
     name: profile?.display_name || "이름 없음",
-    subtitle: first ? `${first.terms.organizations.name} · ${roleLabel(first.role)}` : null,
-    isManager: memberships.some((m) => m.role === "treasurer" || m.role === "president"),
+    subtitle: first
+      ? `${first.terms.organizations.name} · ${first.position || roleLabel(first.role)}`
+      : null,
+    isAdmin: memberships.some((m) => isAdminRole(m.role)),
+    canAudit: canAny(memberships, "audit"),
+    canSettings: canAny(memberships, "settings"),
   };
   return <TopBar user={user} />;
 }

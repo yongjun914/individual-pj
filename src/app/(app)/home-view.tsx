@@ -11,8 +11,11 @@ export type RecentExpense = ExpenseListItem;
 
 /** 시작 가이드에 쓰는 진행 상태 (대표 학생회 기준) */
 export type GuideState = {
-  isManager: boolean;
-  isTreasurer: boolean;
+  canIncome: boolean;
+  canAudit: boolean;
+  canPayments: boolean;
+  canSettings: boolean;
+  isAdmin: boolean;
   hasIncome: boolean;
   hasExpense: boolean;
   receiptsDone: boolean;
@@ -47,7 +50,7 @@ function Stat({
     </>
   );
   const cls =
-    "block rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950";
+    "block rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-5 dark:border-zinc-800 dark:bg-zinc-900";
   return href ? (
     <Link href={href} className={`${cls} hover:border-blue-300 hover:shadow-sm`}>
       {body}
@@ -66,7 +69,7 @@ function StartGuide({ guide }: { guide: GuideState }) {
       detail: "지난 기수에서 넘어온 돈은 '이월액'으로 넣어요. 그래야 잔액이 맞아요.",
       href: "/incomes/new",
       action: "수입 등록",
-      show: guide.isManager,
+      show: guide.canIncome,
     },
     {
       done: guide.hasExpense,
@@ -88,9 +91,9 @@ function StartGuide({ guide }: { guide: GuideState }) {
       done: guide.hasMembers,
       title: "집행부원 초대하기",
       detail: "초대 링크를 보내면 다른 사람도 지출을 등록할 수 있어요.",
-      href: "/settings",
+      href: "/members",
       action: "초대하기",
-      show: guide.isManager,
+      show: guide.isAdmin,
     },
     {
       done: guide.hasPaymentLink,
@@ -98,7 +101,7 @@ function StartGuide({ guide }: { guide: GuideState }) {
       detail: "학생회 카드 결제 문자가 오면 지출이 자동으로 생겨요.",
       href: "/settings/payments",
       action: "설정하기",
-      show: guide.isTreasurer,
+      show: guide.canPayments,
     },
   ].filter((s) => s.show);
 
@@ -106,12 +109,12 @@ function StartGuide({ guide }: { guide: GuideState }) {
   if (doneCount === steps.length) {
     return (
       <Card title="감사 준비" description="기본 설정을 모두 마쳤어요. 감사 기간이 되면 자료를 내려받으세요.">
-        {guide.isManager ? (
+        {guide.canAudit ? (
           <ButtonLink href="/audit" variant="secondary">
             감사 준비로 가기
           </ButtonLink>
         ) : (
-          <p className="text-sm text-zinc-500">감사 자료는 총무·회장이 내려받아요.</p>
+          <p className="text-sm text-zinc-500">감사 자료는 감사 자료 권한이 있는 사람이 내려받아요.</p>
         )}
       </Card>
     );
@@ -182,7 +185,7 @@ export function HomeView({
         </div>
         <div className="flex flex-wrap gap-2">
           <ButtonLink href="/expenses/new">+ 지출 등록</ButtonLink>
-          {guide.isManager && (
+          {guide.canIncome && (
             <ButtonLink href="/incomes/new" variant="green">
               + 수입 등록
             </ButtonLink>
@@ -201,7 +204,7 @@ export function HomeView({
           <section key={m.terms.id} className="space-y-3">
             <p className="text-sm text-zinc-500">
               {m.terms.organizations.school_name} · <span className="font-semibold text-zinc-800 dark:text-zinc-200">{m.terms.organizations.name}</span> ·{" "}
-              {m.terms.name} · 내 직책 {roleLabel(m.role)}
+              {m.terms.name} · 내 직책 {m.position || roleLabel(m.role)}
             </p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Stat label="수입 (예산액)" value={formatWon(income)} href="/incomes" tone="green" />
@@ -254,12 +257,10 @@ export function HomeView({
               {[
                 { href: "/expenses", label: "지출 목록" },
                 { href: "/incomes", label: "수입 목록" },
-                ...(guide.isManager
-                  ? [
-                      { href: "/audit", label: "감사 준비" },
-                      { href: "/settings", label: "학생회 설정" },
-                    ]
-                  : []),
+                { href: "/events", label: "행사 관리" },
+                ...(guide.canAudit ? [{ href: "/audit", label: "감사 준비" }] : []),
+                ...(guide.canSettings ? [{ href: "/settings", label: "학생회 설정" }] : []),
+                ...(guide.isAdmin ? [{ href: "/members", label: "학생회원 관리" }] : []),
                 { href: "/me", label: "마이페이지" },
                 { href: "/onboarding", label: "다른 학생회 만들기" },
               ].map((l) => (

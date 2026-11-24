@@ -92,7 +92,7 @@ export function MissingReasonPanel({
               type="button"
               onClick={save}
               disabled={isPending || text.trim().length < 10}
-              className="h-11 flex-1 rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              className="h-11 flex-1 rounded-full btn-glow bg-blue-600 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
             >
               {isPending ? "저장하는 중…" : "사유서 저장"}
             </button>

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page } from "@/components/page";
+import { can } from "@/lib/permissions";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { formatDateTime, formatLongDate, formatWon, todayInSeoul } from "@/lib/format";
@@ -63,13 +64,13 @@ async function IncomeContent({ params }: { params: PageProps<"/incomes/[id]">["p
   if (!income) notFound();
 
   const [{ data: membership }, { data: creator }] = await Promise.all([
-    supabase.from("memberships").select("role").eq("term_id", income.term_id).eq("user_id", userId).maybeSingle(),
+    supabase.from("memberships").select("role, revoked_permissions").eq("term_id", income.term_id).eq("user_id", userId).maybeSingle(),
     income.created_by
       ? supabase.from("profiles").select("display_name").eq("id", income.created_by).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
   const canEdit =
-    income.terms.is_active && !income.deleted_at && (membership?.role === "treasurer" || membership?.role === "president");
+    income.terms.is_active && !income.deleted_at && can(membership, "incomes");
 
   const info = (
     <dl className="divide-y divide-zinc-200 rounded-2xl border border-zinc-200 text-sm dark:divide-zinc-800 dark:border-zinc-800">

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page, PageHeader } from "@/components/page";
+import { canAny } from "@/lib/permissions";
 import { requireUserId } from "@/lib/auth";
 import { formatShortDate, formatWon } from "@/lib/format";
 import { INCOME_METHOD_LABELS, type IncomeMethod } from "@/lib/income-input";
@@ -77,7 +78,7 @@ async function IncomesContent({ searchParams }: { searchParams: PageProps<"/inco
   const incomes = data ?? [];
   const total = incomes.reduce((s, i) => s + i.amount, 0);
   const sources = [...new Set((allSources ?? []).map((s) => s.source as string))].sort();
-  const canWrite = memberships.some((m) => m.role === "treasurer" || m.role === "president");
+  const canWrite = canAny(memberships, "incomes");
   const filtered = Boolean(from || to || source);
 
   return (
@@ -86,12 +87,12 @@ async function IncomesContent({ searchParams }: { searchParams: PageProps<"/inco
       {canWrite && (
         <Link
           href="/incomes/new"
-          className="flex h-12 items-center justify-center rounded-xl bg-green-700 font-semibold text-white hover:bg-green-800"
+          className="flex h-12 items-center justify-center rounded-lg bg-green-300 font-semibold text-green-950 hover:bg-green-400"
         >
           + 수입 등록
         </Link>
       )}
-      <Form action="/incomes" className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <Form action="/incomes" className="space-y-3 rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="font-semibold">걸러 보기</p>
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1">

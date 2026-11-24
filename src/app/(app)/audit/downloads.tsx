@@ -138,7 +138,7 @@ export function AuditDownloads({ report, meta, errorCount }: { report: AuditRepo
         {format === "hwpx" ? (
           <>
             <label
-              className={`flex h-12 cursor-pointer items-center justify-center rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700 ${
+              className={`flex h-12 cursor-pointer items-center justify-center rounded-full btn-glow bg-blue-600 font-medium text-white hover:bg-blue-700 ${
                 isPending || empty ? "pointer-events-none opacity-60" : ""
               }`}
             >
@@ -167,7 +167,7 @@ export function AuditDownloads({ report, meta, errorCount }: { report: AuditRepo
               type="button"
               onClick={excel}
               disabled={isPending || empty}
-              className="h-12 w-full rounded-xl bg-green-700 font-medium text-white hover:bg-green-800 disabled:opacity-60"
+              className="h-12 w-full rounded-lg bg-green-300 font-medium text-green-950 hover:bg-green-400 disabled:opacity-60"
             >
               결산내역서 엑셀 받기
             </button>
@@ -183,7 +183,7 @@ export function AuditDownloads({ report, meta, errorCount }: { report: AuditRepo
         type="button"
         onClick={pdf}
         disabled={isPending || noExpenses}
-        className="h-12 w-full rounded-xl border border-zinc-300 font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        className="h-12 w-full rounded-lg btn-brutal bg-white dark:bg-zinc-900 font-medium disabled:opacity-60"
       >
         증빙 PDF 받기
       </button>

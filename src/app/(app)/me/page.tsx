@@ -6,7 +6,8 @@ import { signOut } from "@/app/auth/actions";
 import { ButtonLink, Card, Page, PageHeader } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { formatDateTime, formatWon } from "@/lib/format";
-import { roleLabel, type MemberRole } from "@/lib/roles";
+import { can, PERMISSION_LABELS, PERMISSIONS } from "@/lib/permissions";
+import { isAdminRole, roleLabel, type MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 import { DeleteAccount, MyNameForm } from "../settings/controls";
@@ -16,6 +17,8 @@ export const metadata: Metadata = { title: "마이페이지" };
 type MyMembership = {
   id: string;
   role: MemberRole;
+  position: string;
+  revoked_permissions: string[];
   created_at: string;
   terms: {
     id: string;
@@ -28,9 +31,11 @@ type MyMembership = {
 };
 
 const ROLE_DESCRIPTIONS: Record<MemberRole, string> = {
-  treasurer: "모든 지출·수입을 고치고, 감사 자료를 내려받고, 결제 문자 연동을 설정할 수 있어요.",
-  president: "모든 지출·수입을 고치고, 감사 자료와 학생회 설정을 관리할 수 있어요.",
-  member: "지출을 등록하고, 본인이 등록한 지출을 고칠 수 있어요.",
+  president: "모든 기능을 쓰고, 학생회원 관리에서 멤버의 역할·직책·기능 권한을 정할 수 있어요.",
+  vice_president: "모든 기능을 쓰고, 학생회원 관리에서 멤버의 역할·직책·기능 권한을 정할 수 있어요.",
+  treasurer: "모든 기능을 쓰고, 학생회원 관리도 할 수 있어요.",
+  officer: "기본으로 모든 기능을 쓸 수 있어요. 학회장·부학회장이 일부 기능 권한을 해제할 수 있어요.",
+  member: "기본으로 모든 기능을 쓸 수 있어요. 학회장·부학회장이 일부 기능 권한을 해제할 수 있어요.",
 };
 
 export default function MyPage() {
@@ -53,7 +58,7 @@ async function MyContent() {
     supabase.auth.getUser(),
     supabase
       .from("memberships")
-      .select("id, role, created_at, terms!inner(id, name, is_active, starts_on, ends_on, organizations!inner(id, name, school_name))")
+      .select("id, role, position, revoked_permissions, created_at, terms!inner(id, name, is_active, starts_on, ends_on, organizations!inner(id, name, school_name))")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .overrideTypes<MyMembership[], { merge: false }>(),
@@ -135,14 +140,29 @@ async function MyContent() {
                   </span>
                 </div>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">{ROLE_DESCRIPTIONS[m.role]}</p>
-                {(m.role === "treasurer" || m.role === "president") && (
-                  <Link
-                    href={`/settings?org=${m.terms.organizations.id}`}
-                    className="inline-block text-sm font-medium text-blue-600 underline-offset-4 hover:underline"
-                  >
-                    학생회 설정 →
-                  </Link>
-                )}
+                {m.position && <p className="text-sm font-medium">{m.position}</p>}
+                <p className="text-sm text-zinc-500">
+                  쓸 수 있는 기능:{" "}
+                  {PERMISSIONS.filter((p) => can(m, p)).map((p) => PERMISSION_LABELS[p].label).join(", ") || "지출 등록만"}
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  {can(m, "settings") && (
+                    <Link
+                      href={`/settings?org=${m.terms.organizations.id}`}
+                      className="inline-block text-sm font-medium text-blue-600 underline-offset-4 hover:underline"
+                    >
+                      학생회 설정 →
+                    </Link>
+                  )}
+                  {isAdminRole(m.role) && (
+                    <Link
+                      href={`/members?org=${m.terms.organizations.id}`}
+                      className="inline-block text-sm font-medium text-blue-600 underline-offset-4 hover:underline"
+                    >
+                      학생회원 관리 →
+                    </Link>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -174,7 +194,7 @@ async function MyContent() {
           <form action={signOut}>
             <button
               type="submit"
-              className="h-11 rounded-xl border border-zinc-300 px-4 font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              className="h-11 rounded-lg btn-brutal bg-white dark:bg-zinc-900 px-4 font-medium"
             >
               로그아웃
             </button>

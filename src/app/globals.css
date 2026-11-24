@@ -1,9 +1,59 @@
 @import "tailwindcss";
 
+/*
+ * 디자인 기준: 피그마 "Free Different Buttons" 키트
+ * - 라벤더·페리윙클 알약 버튼(주요 동작), 민트 버튼(돈 들어오는 동작)
+ * - 검은 테두리 + 오프셋 그림자 버튼(보조 동작), 보라 밑줄 링크
+ * - 연보라 배경에 민트 빛이 도는 모서리
+ * 앱 곳곳의 blue/green/zinc 클래스가 그대로 새 색을 쓰도록 팔레트 자체를 바꾼다.
+ */
+@theme {
+  /* blue → 페리윙클·보라 */
+  --color-blue-50: #f1f0ff;
+  --color-blue-100: #e4e3ff;
+  --color-blue-200: #cfd0fb;
+  --color-blue-300: #b3b4f4;
+  --color-blue-400: #9190ea;
+  --color-blue-500: #7a74df;
+  --color-blue-600: #6656d0;
+  --color-blue-700: #5643b5;
+  --color-blue-800: #463893;
+  --color-blue-900: #3b3275;
+  --color-blue-950: #1e1a3d;
+
+  /* green → 민트 */
+  --color-green-50: #ecfbef;
+  --color-green-100: #d5f5dc;
+  --color-green-200: #b8ecc0;
+  --color-green-300: #a3e3a0;
+  --color-green-400: #7fd283;
+  --color-green-500: #4fb565;
+  --color-green-600: #2f9450;
+  --color-green-700: #237a40;
+  --color-green-800: #1e6234;
+  --color-green-900: #1a4f2c;
+  --color-green-950: #0b2a16;
+
+  /* zinc → 보랏빛이 살짝 도는 회색 */
+  --color-zinc-50: #f7f6fb;
+  --color-zinc-100: #efedf6;
+  --color-zinc-200: #e3e0ee;
+  --color-zinc-300: #cfcbdd;
+  --color-zinc-400: #a19cb3;
+  --color-zinc-500: #6f6a82;
+  --color-zinc-600: #565267;
+  --color-zinc-700: #423f50;
+  --color-zinc-800: #2a2834;
+  --color-zinc-900: #1b1a22;
+  --color-zinc-950: #121117;
+}
+
 :root {
-  --background: #ffffff;
-  --surface: #f8f9fb;
-  --foreground: #171717;
+  --background: #f6f5fa;
+  --surface: #ffffff;
+  --foreground: #1b1a22;
+  --ink: #1b1a22;
+  --glow: #d4f6e6;
 }
 
 @theme inline {
@@ -16,9 +66,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0b0c;
-    --surface: #161618;
-    --foreground: #ededed;
+    --background: #121117;
+    --surface: #1b1a22;
+    --foreground: #eeedf3;
+    --ink: #eeedf3;
+    --glow: #16302a;
   }
 }
 
@@ -38,8 +90,52 @@ html {
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(48rem 32rem at 0% 100%, var(--glow) 0%, transparent 70%),
+    var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
   word-break: keep-all;
+}
+
+/* 주요 버튼: 페리윙클 알약 + 은은한 빛 */
+@utility btn-glow {
+  box-shadow: 0 8px 18px -8px rgb(102 86 208 / 0.65);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+}
+
+/* 보조 버튼: 검은 테두리 + 오프셋 그림자 (누르면 그림자 쪽으로 눌린다) */
+@utility btn-brutal {
+  border: 1.5px solid var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  transition:
+    transform 100ms ease,
+    box-shadow 100ms ease;
+  &:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 0 var(--ink);
+  }
+  &:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: 0 0 0 0 var(--ink);
+  }
+}
+
+/* 별 모양 배지(피그마의 연두 별 배지) */
+@utility starburst {
+  clip-path: polygon(
+    50% 0%, 59% 13%, 75% 7%, 75% 24%, 93% 25%, 85% 41%, 100% 50%, 85% 59%, 93% 75%, 75% 76%,
+    75% 93%, 59% 87%, 50% 100%, 41% 87%, 25% 93%, 25% 76%, 7% 75%, 15% 59%, 0% 50%, 15% 41%,
+    7% 25%, 25% 24%, 25% 7%, 41% 13%
+  );
 }

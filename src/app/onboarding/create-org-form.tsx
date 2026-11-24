@@ -61,14 +61,16 @@ export function CreateOrgForm() {
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">내 역할</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <RoleOption value="treasurer" label="총무(회계)" defaultChecked={(v?.role ?? "treasurer") === "treasurer"} />
-          <RoleOption value="president" label="회장" defaultChecked={v?.role === "president"} />
+        <div className="grid grid-cols-3 gap-3">
+          <RoleOption value="president" label="학회장" defaultChecked={(v?.role ?? "president") === "president"} />
+          <RoleOption value="vice_president" label="부학회장" defaultChecked={v?.role === "vice_president"} />
+          <RoleOption value="treasurer" label="총무" defaultChecked={v?.role === "treasurer"} />
         </div>
+        <p className="text-sm text-zinc-500">학생회를 만든 사람은 학생회원 관리(멤버 초대·역할·권한)를 할 수 있어요.</p>
         {e.role && <p className="text-sm text-red-600">{e.role}</p>}
       </fieldset>
 
-      <SubmitButton pendingText="만드는 중…" className="bg-blue-600 text-white hover:bg-blue-700">
+      <SubmitButton pendingText="만드는 중…" className="btn-glow bg-blue-600 text-white hover:bg-blue-700">
         학생회 만들기
       </SubmitButton>
     </form>
@@ -105,7 +107,7 @@ function Field({
 
 function RoleOption({ value, label, defaultChecked }: { value: string; label: string; defaultChecked: boolean }) {
   return (
-    <label className="flex h-12 cursor-pointer items-center justify-center rounded-xl border border-zinc-300 text-base has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:font-medium has-[:checked]:text-blue-700 dark:border-zinc-700 dark:has-[:checked]:bg-blue-950 dark:has-[:checked]:text-blue-300">
+    <label className="flex h-12 cursor-pointer items-center justify-center rounded-full border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 text-base has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50 has-[:checked]:font-medium has-[:checked]:text-blue-700 dark:has-[:checked]:bg-blue-950 dark:has-[:checked]:text-blue-300">
       <input type="radio" name="role" value={value} defaultChecked={defaultChecked} className="sr-only" />
       {label}
     </label>

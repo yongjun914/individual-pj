@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { can } from "@/lib/permissions";
 import { UUID } from "@/lib/expense-input";
 import type { ExpenseStatus, PaymentMethod } from "@/lib/expenses";
 import type { MemberRole } from "@/lib/roles";
@@ -50,17 +51,18 @@ export async function getExpenseDetail(supabase: SupabaseClient, userId: string,
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("role")
+    .select("role, revoked_permissions")
     .eq("term_id", expense.term_id)
     .eq("user_id", userId)
     .maybeSingle();
 
   const role = (membership?.role ?? null) as MemberRole | null;
-  const isManager = role === "treasurer" || role === "president";
+  // 모든 지출 수정 권한이 있거나, 본인이 등록한 지출이면 고칠 수 있다 (DB 규칙과 같게)
   const canEdit =
     expense.terms.is_active &&
     !expense.deleted_at &&
-    (isManager || (role === "member" && expense.created_by === userId));
+    Boolean(membership) &&
+    (can(membership, "expenses_all") || expense.created_by === userId);
 
   return { expense, role, canEdit };
 }

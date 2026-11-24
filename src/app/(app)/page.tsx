@@ -5,6 +5,8 @@ import { Page } from "@/components/page";
 import { requireUserId } from "@/lib/auth";
 import { summarizeByTerm, type SummaryRow } from "@/lib/expenses";
 import { getActiveMemberships } from "@/lib/memberships";
+import { can } from "@/lib/permissions";
+import { isAdminRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 import { HomeView, type GuideState, type RecentExpense } from "./home-view";
@@ -33,7 +35,6 @@ async function HomeContent() {
 
   const termIds = memberships.map((m) => m.terms.id);
   const primary = memberships[0];
-  const isManager = primary.role === "treasurer" || primary.role === "president";
 
   const [{ data: recent }, { data: summaryRows }, { data: incomeRows }, { count: memberCount }, { count: tokenCount }] =
     await Promise.all([
@@ -54,7 +55,7 @@ async function HomeContent() {
         .overrideTypes<SummaryRow[], { merge: false }>(),
       supabase.from("incomes").select("term_id, amount").in("term_id", termIds).is("deleted_at", null),
       supabase.from("memberships").select("id", { count: "exact", head: true }).eq("term_id", primary.terms.id),
-      // 총무만 결과가 나온다 (RLS)
+      // 결제 연동 권한이 있어야 결과가 나온다 (RLS)
       supabase
         .from("webhook_tokens")
         .select("id", { count: "exact", head: true })
@@ -72,8 +73,11 @@ async function HomeContent() {
   // 시작 가이드: 대표 학생회(첫 번째) 기준
   const primaryRows = (summaryRows ?? []).filter((r) => r.term_id === primary.terms.id);
   const guide: GuideState = {
-    isManager,
-    isTreasurer: primary.role === "treasurer",
+    canIncome: can(primary, "incomes"),
+    canAudit: can(primary, "audit"),
+    canPayments: can(primary, "payments"),
+    canSettings: can(primary, "settings"),
+    isAdmin: isAdminRole(primary.role),
     hasIncome: (incomeRows ?? []).some((r) => r.term_id === primary.terms.id),
     hasExpense: primaryRows.length > 0,
     receiptsDone: primaryRows.length > 0 && primaryRows.every((r) => r.status !== "needs_receipt"),

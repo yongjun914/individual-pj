@@ -85,7 +85,7 @@ const cats = await as(A, `select count(*)::int as n from public.categories where
 check("기본 카테고리 5개 생성", cats.rows[0].n === 5);
 check("외부인 C는 학생회를 못 봄", (await as(C, `select * from public.organizations`)).rows.length === 0);
 await expectError("집행부원 역할로는 학생회 생성 불가",
-  () => as(C, `select public.create_organization('a', 'b', 'c', 'member')`), /총무 또는 회장/);
+  () => as(C, `select public.create_organization('a', 'b', 'c', 'member')`), /학회장·부학회장·총무/);
 await expectError("비로그인은 학생회 생성 불가", () => db.transaction(async (tx) => {
   await tx.exec(`set local role anon;`);
   return tx.query(`select public.create_organization('a', 'b', 'c')`);
@@ -99,6 +99,10 @@ check("초대 토큰 64자", token.length === 64);
 check("집행부원 전 B는 초대 목록 못 봄", (await as(B, `select * from public.invitations`)).rows.length === 0);
 await as(B, `select public.accept_invitation($1)`, [token]);
 check("B가 초대 수락 후 학생회 조회", (await as(B, `select * from public.organizations`)).rows.length === 1);
+// 기본으로는 모든 기능 권한이 있다. 아래 "부원은 못 한다" 확인을 위해 관리자(A)가 B의 기능 권한을 모두 해제한다.
+await as(A, `update public.memberships set revoked_permissions = array['expenses_all','incomes','audit','events','payments','settings'] where term_id = $1 and user_id = $2`, [term1, B]);
+check("관리자는 부원의 기능 권한을 해제", (await as(A, `select cardinality(revoked_permissions) as n from public.memberships where term_id = $1 and user_id = $2`, [term1, B])).rows[0].n === 6);
+check("부원은 자기 권한을 되돌릴 수 없음", (await as(B, `update public.memberships set revoked_permissions = '{}' where term_id = $1 and user_id = $2 returning id`, [term1, B])).rows.length === 0);
 check("B도 초대 목록은 못 봄(집행부원)", (await as(B, `select * from public.invitations`)).rows.length === 0);
 await expectError("잘못된 토큰 거부", () => as(C, `select public.accept_invitation('nope')`), /만료/);
 check("같은 학생회 프로필 조회(B→A)", (await as(B, `select * from public.profiles where id = $1`, [A])).rows.length === 1);
@@ -242,7 +246,7 @@ await expectError("집행부원이 자기 역할을 총무로 올리기 불가",
 
 // --- 기수 전환
 await expectError("집행부원은 기수 전환 불가",
-  () => as(B, `select public.start_new_term($1, '2027년 제39대')`, [orgId]), /회장 또는 총무/);
+  () => as(B, `select public.start_new_term($1, '2027년 제39대')`, [orgId]), /학회장·부학회장·총무만/);
 const term2 = (await as(A, `select public.start_new_term($1, '2027년 제39대', 'treasurer') as id`, [orgId])).rows[0].id;
 const terms = await as(A, `select id, is_active from public.terms where organization_id = $1`, [orgId]);
 check("새 기수 활성, 이전 기수 비활성", terms.rows.filter((t) => t.is_active).length === 1 && terms.rows.find((t) => t.id === term1).is_active === false);
@@ -359,6 +363,49 @@ check("총무는 멤버 역할 변경",
 check("총무는 멤버 내보내기",
   (await as(A, `delete from public.memberships where id = $1 returning id`, [bTerm2])).rows.length === 1);
 
+// --- 기능 권한 (기본 허용 + 관리자가 해제) · 부학회장 · 행사 명단
+await as(A, `insert into public.memberships (term_id, user_id, role, position) values ($1, $2, 'officer', '기획부 부장')`, [term2, B]);
+check("임원은 기본으로 행사 분류 추가 가능",
+  (await as(B, `insert into public.categories (term_id, name) values ($1, '개강총회') returning id`, [term2])).rows.length === 1);
+check("임원은 기본으로 수입 등록 가능",
+  (await as(B, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-05', '학회비', 1000, $2) returning id`, [term2, B])).rows.length === 1);
+const ev = (await as(B, `insert into public.events (term_id, kind, name, fee, created_by) values ($1, 'opening', '2026 개강총회', 15000, $2) returning id`, [term2, B])).rows[0].id;
+check("임원은 기본으로 행사 만들기 가능", !!ev);
+check("임원은 참가자 추가 가능",
+  (await as(B, `insert into public.event_participants (event_id, name, student_no, grade) values ($1, '홍길동', '24', 1) returning id`, [ev])).rows.length === 1);
+await expectError("학번은 2자리만", () => as(B, `insert into public.event_participants (event_id, name, student_no) values ($1, '김학생', '2024')`, [ev]), /check/);
+await expectError("이름은 필수", () => as(B, `insert into public.event_participants (event_id, name, student_no) values ($1, '  ', '24')`, [ev]), /check/);
+check("학년은 없어도 됨",
+  (await as(B, `insert into public.event_participants (event_id, name, student_no) values ($1, '이학생', '23') returning id`, [ev])).rows.length === 1);
+check("외부인은 행사·명단 못 봄",
+  (await as(C, `select (select count(*) from public.events)::int + (select count(*) from public.event_participants)::int as n`)).rows[0].n === 0);
+check("임원도 학생회원 관리(역할 변경)는 불가",
+  (await as(B, `update public.memberships set role = 'president' where term_id = $1 and user_id = $2 returning id`, [term2, B])).rows.length === 0);
+check("임원은 초대 링크 못 봄", (await as(B, `select * from public.invitations where term_id = $1`, [term2])).rows.length === 0);
+
+await as(A, `update public.memberships set revoked_permissions = array['events'] where term_id = $1 and user_id = $2`, [term2, B]);
+await expectError("행사 권한을 해제하면 참가자 추가 불가",
+  () => as(B, `insert into public.event_participants (event_id, name, student_no) values ($1, '박학생', '22')`, [ev]), /row-level security/);
+check("행사 권한을 해제하면 명단 수정 불가",
+  (await as(B, `update public.event_participants set paid = true where event_id = $1 returning id`, [ev])).rows.length === 0);
+check("해제하지 않은 권한(수입)은 그대로",
+  (await as(B, `insert into public.incomes (term_id, received_on, source, amount, created_by) values ($1, '2026-12-05', '기타', 500, $2) returning id`, [term2, B])).rows.length === 1);
+check("권한이 없어도 명단은 볼 수 있음", (await as(B, `select id from public.event_participants where event_id = $1`, [ev])).rows.length === 2);
+
+await as(A, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'vice_president')`, [term2, C]);
+check("부학회장은 학생회원 관리 가능(권한 되돌리기)",
+  (await as(C, `update public.memberships set revoked_permissions = '{}' where term_id = $1 and user_id = $2 returning id`, [term2, B])).rows.length === 1);
+check("부학회장은 초대 링크 만들기 가능",
+  (await as(C, `insert into public.invitations (term_id, role, created_by) values ($1, 'officer', $2) returning id`, [term2, C])).rows.length === 1);
+check("부학회장은 해제 목록이 있어도 모든 기능 사용",
+  (await as(A, `update public.memberships set revoked_permissions = array['events'] where term_id = $1 and user_id = $2 returning id`, [term2, C])).rows.length === 1
+  && (await as(C, `insert into public.event_participants (event_id, name, student_no) values ($1, '최학생', '22') returning id`, [ev])).rows.length === 1);
+await expectError("부원으로는 기수 전환 불가(역할 확인)",
+  () => as(A, `select public.start_new_term($1, 'x', 'member')`, [orgId]), /학회장·부학회장·총무/);
+
+// 정리: 다음 회원 탈퇴 시나리오를 위해 term2에서 B·C를 내보낸다
+await as(A, `delete from public.memberships where term_id = $1 and user_id in ($2, $3)`, [term2, B, C]);
+
 // --- 회원 탈퇴 (이 시점: A는 term2의 유일한 총무, B는 term2에서 나간 상태)
 const D = "00000000-0000-0000-0000-00000000000d";
 await db.query(`insert into auth.users (id, raw_user_meta_data) values ($1, '{"name":"박혼자"}')`, [D]);
@@ -381,7 +428,7 @@ check("탈퇴 후 이력의 작성자도 비워짐",
 
 await as(A, `insert into public.memberships (term_id, user_id, role) values ($1, $2, 'member')`, [term2, B]);
 await expectError("다른 멤버가 있는데 유일한 총무면 탈퇴 불가",
-  () => as(A, `select public.delete_my_account()`), /유일한 총무·회장/);
+  () => as(A, `select public.delete_my_account()`), /유일한 학회장·부학회장/);
 await expectError("비로그인은 탈퇴 함수 실행 불가", () => db.transaction(async (tx) => {
   await tx.exec(`set local role anon;`);
   return tx.query(`select public.delete_my_account()`);

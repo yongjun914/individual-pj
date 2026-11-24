@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page } from "@/components/page";
+import { can } from "@/lib/permissions";
 import { requireUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { createClient } from "@/lib/supabase/server";
@@ -42,8 +43,8 @@ async function ImportContent() {
   const terms = memberships.map((m) => ({
     id: m.terms.id,
     label: `${m.terms.organizations.name} · ${m.terms.name}`,
-    // 수입 기록은 총무·회장만 (DB 권한과 같게)
-    canIncome: m.role === "treasurer" || m.role === "president",
+    // 수입 관리 권한이 있을 때만 (DB 권한과 같게)
+    canIncome: can(m, "incomes"),
   }));
 
   return <ImportFlow terms={terms} />;

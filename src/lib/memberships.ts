@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ActiveMembership = {
   role: string;
+  position: string;
+  revoked_permissions: string[];
   terms: {
     id: string;
     name: string;
@@ -13,7 +15,7 @@ export type ActiveMembership = {
 export async function getActiveMemberships(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("memberships")
-    .select("role, terms!inner(id, name, organizations!inner(id, name, school_name))")
+    .select("role, position, revoked_permissions, terms!inner(id, name, organizations!inner(id, name, school_name))")
     .eq("user_id", userId)
     .eq("terms.is_active", true)
     .overrideTypes<ActiveMembership[], { merge: false }>();

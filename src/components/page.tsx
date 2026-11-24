@@ -40,7 +40,7 @@ export function PageHeader({
     <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div className="space-y-1">
         {back && (
-          <Link href={back.href} className="text-sm text-zinc-500 underline-offset-4 hover:underline">
+          <Link href={back.href} className="inline-flex items-center gap-1 text-sm font-medium text-blue-700 underline decoration-blue-300 decoration-2 underline-offset-4 hover:decoration-blue-600 dark:text-blue-300">
             ← {back.label}
           </Link>
         )}
@@ -67,7 +67,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 md:p-6 dark:border-zinc-800 dark:bg-zinc-950 ${className}`}>
+    <section className={`space-y-4 rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] md:p-6 dark:border-zinc-800 dark:bg-zinc-900 ${className}`}>
       {(title || actions) && (
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -93,13 +93,12 @@ export function ButtonLink({
   variant?: "primary" | "secondary" | "green";
 }) {
   const style = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700",
-    green: "bg-green-700 text-white hover:bg-green-800",
-    secondary:
-      "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800",
+    primary: "rounded-full btn-glow bg-linear-to-r from-blue-500 to-blue-600 text-white hover:to-blue-700",
+    green: "rounded-lg bg-green-300 text-green-950 hover:bg-green-400",
+    secondary: "rounded-lg btn-brutal bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100",
   }[variant];
   return (
-    <Link href={href} className={`inline-flex h-11 items-center justify-center rounded-xl px-4 font-medium ${style}`}>
+    <Link href={href} className={`inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap px-5 font-medium ${style}`}>
       {children}
     </Link>
   );

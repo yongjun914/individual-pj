@@ -181,7 +181,7 @@ export function IncomeForm({
       <button
         type="submit"
         disabled={isPending}
-        className="h-12 w-full rounded-xl bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        className="h-12 w-full rounded-full btn-glow bg-blue-600 text-base font-medium text-white hover:bg-blue-700 disabled:opacity-60"
       >
         {isPending ? "저장하는 중…" : "저장"}
       </button>

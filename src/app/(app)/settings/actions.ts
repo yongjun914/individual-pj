@@ -6,15 +6,16 @@ import { redirect } from "next/navigation";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
 import { unlinkKakaoUser } from "@/lib/kakao";
-import type { MemberRole } from "@/lib/roles";
+import { PERMISSIONS, type Permission } from "@/lib/permissions";
+import { ADMIN_ROLES, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 
 /** 실패하면 안내 문구, 성공하면 null */
 export type ActionError = { error: string } | null;
 
-const ROLES: MemberRole[] = ["treasurer", "president", "member"];
-const MANAGER_ROLES: MemberRole[] = ["treasurer", "president"];
-const NO_PERMISSION = "현재 기수의 총무·회장만 바꿀 수 있어요.";
+const ROLES: MemberRole[] = ROLE_OPTIONS;
+const MANAGER_ROLES: MemberRole[] = ADMIN_ROLES;
+const NO_PERMISSION = "권한이 없어요. 학회장·부학회장에게 권한을 요청해 주세요.";
 
 const isRole = (v: unknown): v is MemberRole => ROLES.includes(v as MemberRole);
 
@@ -67,7 +68,7 @@ export async function createInvitation(termId: string, role: string): Promise<Cr
 
   if (error || !data) {
     console.error("초대 링크 생성 실패", error);
-    return { ok: false, error: "초대 링크를 만들지 못했어요. 현재 기수의 총무·회장만 만들 수 있어요." };
+    return { ok: false, error: "초대 링크를 만들지 못했어요. 학회장·부학회장만 만들 수 있어요." };
   }
 
   refresh();
@@ -95,19 +96,34 @@ export async function revokeInvitation(invitationId: string): Promise<ActionErro
 // 멤버
 // ---------------------------------------------------------------------
 
-export async function changeMemberRole(membershipId: string, role: string): Promise<ActionError> {
-  if (!UUID.test(membershipId) || !isRole(role)) return { error: "잘못된 요청입니다." };
-  const userId = await requireUserId("/settings");
+export type MemberAccess = { role: string; position: string; revoked: string[] };
+
+/**
+ * 학생회원 관리: 역할·부서/직책·기능 권한을 한 번에 바꾼다 (학회장·부학회장·총무만, DB에서도 검사).
+ * 내 역할은 바꿀 수 없다 (관리 권한을 잃지 않게). 내 직책 이름은 바꿀 수 있다.
+ */
+export async function updateMemberAccess(membershipId: string, access: MemberAccess): Promise<ActionError> {
+  if (!UUID.test(membershipId) || !isRole(access.role)) return { error: "잘못된 요청입니다." };
+  const position = access.position.trim();
+  if (position.length > 50) return { error: "부서·직책은 50자 이내로 입력해 주세요." };
+  const revoked = [...new Set(access.revoked)].filter((p): p is Permission => PERMISSIONS.includes(p as Permission));
+
+  const userId = await requireUserId("/members");
   const supabase = await createClient();
 
-  // 자기 역할을 바꾸다 관리 권한을 잃는 일을 막는다
-  const { data: target } = await supabase.from("memberships").select("user_id").eq("id", membershipId).maybeSingle();
+  const { data: target } = await supabase.from("memberships").select("user_id, role").eq("id", membershipId).maybeSingle();
   if (!target) return { error: "멤버를 찾을 수 없어요." };
-  if (target.user_id === userId) return { error: "내 역할은 바꿀 수 없어요. 다른 총무·회장에게 부탁해 주세요." };
+  if (target.user_id === userId && target.role !== access.role) {
+    return { error: "내 역할은 바꿀 수 없어요. 다른 학회장·부학회장에게 부탁해 주세요." };
+  }
 
-  const { data, error } = await supabase.from("memberships").update({ role }).eq("id", membershipId).select("id");
-  if (error) console.error("역할 변경 실패", error);
-  if (error || !affected(data)) return { error: NO_PERMISSION };
+  const { data, error } = await supabase
+    .from("memberships")
+    .update({ role: access.role, position, revoked_permissions: revoked })
+    .eq("id", membershipId)
+    .select("id");
+  if (error) console.error("멤버 권한 변경 실패", error);
+  if (error || !affected(data)) return { error: "학생회원 관리는 학회장·부학회장만 할 수 있어요." };
 
   refresh();
   return null;
@@ -267,7 +283,7 @@ export async function startNewTerm(
   const name = termName.trim();
   if (!UUID.test(orgId)) return { ok: false, error: "잘못된 요청입니다." };
   if (!name || name.length > 50) return { ok: false, error: "새 기수 이름을 1~50자로 입력해 주세요." };
-  if (!MANAGER_ROLES.includes(myRole as MemberRole)) return { ok: false, error: "새 기수에서 내 역할은 총무나 회장이어야 해요." };
+  if (!MANAGER_ROLES.includes(myRole as MemberRole)) return { ok: false, error: "새 기수에서 내 역할은 학회장·부학회장·총무 중 하나여야 해요." };
   if (!carryMembershipIds.every((id) => UUID.test(id))) return { ok: false, error: "잘못된 요청입니다." };
 
   const userId = await requireUserId("/settings");
@@ -298,7 +314,7 @@ export async function startNewTerm(
   });
   if (error || !newTermId) {
     console.error("기수 전환 실패", error);
-    return { ok: false, error: "기수를 전환하지 못했어요. 현재 기수의 총무·회장만 할 수 있어요." };
+    return { ok: false, error: "기수를 전환하지 못했어요. 학회장·부학회장만 할 수 있어요." };
   }
 
   const rows = (carry ?? [])

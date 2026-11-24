@@ -209,7 +209,7 @@ async function DetailContent({
         <div className="space-y-3">
           <Link
             href={`/expenses/${expense.id}/edit`}
-            className="flex h-12 items-center justify-center rounded-xl bg-blue-600 text-base font-medium text-white hover:bg-blue-700"
+            className="flex h-12 items-center justify-center rounded-full btn-glow bg-blue-600 text-base font-medium text-white hover:bg-blue-700"
           >
             내용 수정
           </Link>

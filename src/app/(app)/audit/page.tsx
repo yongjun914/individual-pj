@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page, PageHeader } from "@/components/page";
+import { can } from "@/lib/permissions";
 import { buildAuditReport, type AuditCheck, type AuditExpenseInput, type AuditIncomeInput } from "@/lib/audit";
 import { requireUserId } from "@/lib/auth";
 import { UUID } from "@/lib/expense-input";
@@ -55,11 +56,11 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
   const memberships = await getActiveMemberships(supabase, userId);
   if (memberships.length === 0) redirect("/onboarding");
 
-  const managed = memberships.filter((m) => m.role === "treasurer" || m.role === "president");
+  const managed = memberships.filter((m) => can(m, "audit"));
   if (managed.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-        감사 준비는 총무·회장만 할 수 있어요.
+        감사 자료 권한이 없어요. 학회장·부학회장에게 권한을 요청해 주세요.
       </p>
     );
   }
@@ -146,7 +147,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
 
       <div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
       <div className="space-y-6 lg:sticky lg:top-24">
-      <Form action="/audit" className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <Form action="/audit" className="space-y-3 rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="font-semibold">1. 감사 기간 고르기</p>
         <input type="hidden" name="org" value={org.id} />
         <label className="block space-y-1">
@@ -205,7 +206,7 @@ async function AuditContent({ searchParams }: { searchParams: PageProps<"/audit"
         </p>
       )}
 
-      <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <section className="space-y-3 rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="font-semibold">3. 감사 자료 내려받기</h2>
         <AuditDownloads
           report={report}

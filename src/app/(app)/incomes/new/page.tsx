@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page } from "@/components/page";
+import { can } from "@/lib/permissions";
 import { requireUserId } from "@/lib/auth";
 import { todayInSeoul } from "@/lib/format";
 import { getActiveMemberships } from "@/lib/memberships";
@@ -35,11 +36,11 @@ async function NewIncomeContent() {
   const memberships = await getActiveMemberships(supabase, userId);
   if (memberships.length === 0) redirect("/onboarding");
 
-  const managed = memberships.filter((m) => m.role === "treasurer" || m.role === "president");
+  const managed = memberships.filter((m) => can(m, "incomes"));
   if (managed.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-        수입은 총무·회장만 기록할 수 있어요.
+        수입 관리 권한이 없어요. 학회장·부학회장에게 권한을 요청해 주세요.
       </p>
     );
   }

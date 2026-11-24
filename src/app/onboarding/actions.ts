@@ -10,7 +10,7 @@ export type CreateOrgState = {
   values?: { schoolName: string; name: string; termName: string; role: string };
 };
 
-const ROLES = ["treasurer", "president"] as const;
+const ROLES = ["president", "vice_president", "treasurer"] as const;
 
 function text(formData: FormData, key: string) {
   const value = formData.get(key);

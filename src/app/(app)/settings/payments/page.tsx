@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Page } from "@/components/page";
+import { can } from "@/lib/permissions";
 import { requireUserId } from "@/lib/auth";
 import { formatDateTime, formatWon } from "@/lib/format";
 import { getActiveMemberships, type ActiveMembership } from "@/lib/memberships";
@@ -63,18 +64,18 @@ async function SettingsContent() {
   const memberships = await getActiveMemberships(supabase, userId);
   if (memberships.length === 0) redirect("/onboarding");
 
-  const managed = memberships.filter((m) => m.role === "treasurer" || m.role === "president");
+  const managed = memberships.filter((m) => can(m, "payments"));
   if (managed.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-        결제 연동은 총무·회장만 볼 수 있어요.
+        결제 문자 연동 권한이 없어요. 학회장·부학회장에게 권한을 요청해 주세요.
       </p>
     );
   }
 
   const orgIds = managed.map((m) => m.terms.organizations.id);
   const [{ data: tokens }, { data: events }] = await Promise.all([
-    // 총무만 결과가 나온다 (RLS)
+    // 결제 연동 권한이 있어야 결과가 나온다 (RLS)
     supabase
       .from("webhook_tokens")
       .select("id, organization_id, label, last_used_at, revoked_at, created_at")
@@ -118,7 +119,7 @@ function OrgSection({
   events: EventRow[];
 }) {
   const org = membership.terms.organizations;
-  const isTreasurer = membership.role === "treasurer";
+  const isTreasurer = can(membership, "payments");
   const activeTokens = tokens.filter((t) => !t.revoked_at);
 
   return (
@@ -149,7 +150,7 @@ function OrgSection({
             <IssueTokenForm organizationId={org.id} />
           </>
         ) : (
-          <p className="text-sm text-zinc-500">토큰 발급·폐기는 총무만 할 수 있어요.</p>
+          <p className="text-sm text-zinc-500">토큰 발급·폐기는 결제 연동 권한이 있어야 해요.</p>
         )}
       </div>
 

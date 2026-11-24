@@ -10,7 +10,7 @@ export default function ErrorPage({ reset }: { error: Error & { digest?: string 
       <button
         type="button"
         onClick={reset}
-        className="mx-auto h-11 rounded-xl bg-blue-600 px-6 font-medium text-white hover:bg-blue-700"
+        className="mx-auto h-11 rounded-full btn-glow bg-blue-600 px-6 font-medium text-white hover:bg-blue-700"
       >
         다시 시도
       </button>

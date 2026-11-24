@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { ROLE_LABELS, type MemberRole } from "@/lib/roles";
+import { PERMISSION_LABELS, PERMISSIONS, type Permission } from "@/lib/permissions";
+import { ADMIN_ROLES, isAdminRole, ROLE_LABELS, ROLE_OPTIONS, type MemberRole } from "@/lib/roles";
 
 import {
   addCategory,
-  changeMemberRole,
   createInvitation,
   deleteCategory,
   deleteMyAccount,
@@ -17,6 +17,7 @@ import {
   revokeInvitation,
   startNewTerm,
   updateMyName,
+  updateMemberAccess,
   updateOrganization,
   type ActionError,
 } from "./actions";
@@ -24,10 +25,9 @@ import {
 const inputClass =
   "h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-base outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 dark:border-zinc-700 dark:bg-zinc-900";
 const primaryButton =
-  "h-11 shrink-0 rounded-xl bg-blue-600 px-4 font-medium text-white hover:bg-blue-700 disabled:opacity-60";
+  "h-11 shrink-0 rounded-full btn-glow bg-blue-600 px-4 font-medium text-white hover:bg-blue-700 disabled:opacity-60";
 const linkButton = "text-sm underline-offset-4 hover:underline disabled:opacity-50";
 
-const ROLE_OPTIONS: MemberRole[] = ["treasurer", "president", "member"];
 
 function ErrorText({ children }: { children: React.ReactNode }) {
   return (
@@ -97,7 +97,7 @@ export function OrgInfoForm({ orgId, schoolName, name }: { orgId: string; school
 
 export function InviteCreator({ termId }: { termId: string }) {
   const [isPending, startTransition] = useTransition();
-  const [role, setRole] = useState<MemberRole>("member");
+  const [role, setRole] = useState<MemberRole>("officer");
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -221,59 +221,141 @@ export function InviteRow({
 // 멤버
 // ---------------------------------------------------------------------
 
-export function MemberRow({
+export function MemberAccessRow({
   membershipId,
   name,
   role,
+  position,
+  revoked,
   isMe,
 }: {
   membershipId: string;
   name: string;
   role: MemberRole;
+  position: string;
+  revoked: string[];
   isMe: boolean;
 }) {
   const { isPending, error, run } = useAction();
+  const [nextRole, setNextRole] = useState<MemberRole>(role);
+  const [nextPosition, setNextPosition] = useState(position);
+  const [nextRevoked, setNextRevoked] = useState<Set<string>>(new Set(revoked));
+  const [saved, setSaved] = useState(false);
+  const admin = isAdminRole(nextRole);
+  const changed =
+    nextRole !== role ||
+    nextPosition.trim() !== position ||
+    [...nextRevoked].sort().join() !== [...revoked].sort().join();
+
+  function toggle(p: Permission) {
+    setSaved(false);
+    setNextRevoked((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  }
+
   return (
-    <li className="space-y-1 py-2">
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 truncate font-medium">
+    <li className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-lg font-semibold">
           {name}
-          {isMe && <span className="font-normal text-zinc-500"> (나)</span>}
+          {isMe && <span className="ml-1 text-sm font-normal text-zinc-500">(나)</span>}
         </p>
-        {isMe ? (
-          <span className="shrink-0 text-sm text-zinc-500">{ROLE_LABELS[role]}</span>
-        ) : (
-          <div className="flex shrink-0 items-center gap-3">
-            <select
-              value={role}
-              disabled={isPending}
-              aria-label={`${name} 역할`}
-              onChange={(e) => {
-                const next = e.target.value;
-                run(() => changeMemberRole(membershipId, next));
-              }}
-              className="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-            >
-              {ROLE_OPTIONS.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={isPending}
-              className={`${linkButton} text-red-600`}
-              onClick={() => {
-                if (confirm(`${name}님을 이번 기수에서 내보낼까요? 등록한 지출은 그대로 남아요.`)) {
-                  run(() => removeMember(membershipId));
-                }
-              }}
-            >
-              내보내기
-            </button>
-          </div>
+        {!isMe && (
+          <button
+            type="button"
+            disabled={isPending}
+            className={`${linkButton} text-red-600`}
+            onClick={() => {
+              if (confirm(`${name}님을 이번 기수에서 내보낼까요? 등록한 기록은 그대로 남아요.`)) {
+                run(() => removeMember(membershipId));
+              }
+            }}
+          >
+            내보내기
+          </button>
         )}
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-500">역할</span>
+          <select
+            value={nextRole}
+            disabled={isPending || isMe}
+            onChange={(e) => {
+              setSaved(false);
+              setNextRole(e.target.value as MemberRole);
+            }}
+            className={inputClass}
+            aria-label={`${name} 역할`}
+          >
+            {ROLE_OPTIONS.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_LABELS[r]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm text-zinc-500">부서·직책 (선택)</span>
+          <input
+            value={nextPosition}
+            onChange={(e) => {
+              setSaved(false);
+              setNextPosition(e.target.value);
+            }}
+            maxLength={50}
+            placeholder="예: 기획부 부장"
+            className={inputClass}
+            aria-label={`${name} 부서·직책`}
+          />
+        </label>
+      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm text-zinc-500">
+          기능 권한 {admin ? "(학회장·부학회장·총무는 모든 기능을 써요)" : "(체크를 끄면 그 기능을 못 써요)"}
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {PERMISSIONS.map((p) => (
+            <label
+              key={p}
+              className={`flex items-start gap-2 rounded-lg p-2 text-sm ${
+                admin ? "opacity-50" : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-blue-600"
+                checked={admin || !nextRevoked.has(p)}
+                disabled={admin || isPending}
+                onChange={() => toggle(p)}
+              />
+              <span>
+                <span className="font-medium">{PERMISSION_LABELS[p].label}</span>
+                <span className="block text-zinc-500">{PERMISSION_LABELS[p].description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={isPending || !changed}
+          onClick={() =>
+            run(
+              () => updateMemberAccess(membershipId, { role: nextRole, position: nextPosition, revoked: [...nextRevoked] }),
+              () => setSaved(true),
+            )
+          }
+          className={primaryButton}
+        >
+          {isPending ? "저장하는 중…" : "저장"}
+        </button>
+        {saved && !changed && <span className="text-sm text-zinc-500">저장했어요.</span>}
       </div>
       {error && <ErrorText>{error}</ErrorText>}
     </li>
@@ -433,7 +515,7 @@ export function StartTermForm({
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [termName, setTermName] = useState("");
-  const [role, setRole] = useState<MemberRole>(myRole === "member" ? "treasurer" : myRole);
+  const [role, setRole] = useState<MemberRole>(isAdminRole(myRole) ? myRole : "president");
   const others = members.filter((m) => !m.isMe);
   const [carry, setCarry] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -450,7 +532,7 @@ export function StartTermForm({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="h-11 w-full rounded-xl border border-zinc-300 font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          className="h-11 w-full rounded-lg btn-brutal bg-white dark:bg-zinc-900 font-medium"
         >
           새 기수 시작하기
         </button>
@@ -509,8 +591,11 @@ export function StartTermForm({
       <label className="block space-y-1">
         <span className="text-sm text-zinc-500">새 기수에서 내 역할</span>
         <select value={role} onChange={(e) => setRole(e.target.value as MemberRole)} className={inputClass}>
-          <option value="treasurer">{ROLE_LABELS.treasurer}</option>
-          <option value="president">{ROLE_LABELS.president}</option>
+          {ADMIN_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r]}
+            </option>
+          ))}
         </select>
       </label>
       {others.length > 0 && (

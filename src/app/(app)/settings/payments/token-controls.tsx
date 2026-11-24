@@ -68,7 +68,7 @@ export function IssueTokenForm({ organizationId }: { organizationId: string }) {
           type="button"
           onClick={issue}
           disabled={isPending}
-          className="h-11 shrink-0 rounded-xl bg-blue-600 px-4 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          className="h-11 shrink-0 rounded-full btn-glow bg-blue-600 px-4 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
         >
           {isPending ? "만드는 중…" : "토큰 발급"}
         </button>

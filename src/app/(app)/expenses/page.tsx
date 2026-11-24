@@ -144,7 +144,7 @@ type Option = { id: string; label: string };
 
 function FilterForm({ filters, terms, categories }: { filters: ExpenseFilters; terms: Option[]; categories: Option[] }) {
   return (
-    <Form action="/expenses" className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+    <Form action="/expenses" className="space-y-3 rounded-3xl border border-zinc-200/80 bg-white shadow-[0_10px_30px_-18px_rgb(70_56_147/0.35)] p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="font-semibold">걸러 보기</p>
       {terms.length > 0 ? (
         <label className="block space-y-1">

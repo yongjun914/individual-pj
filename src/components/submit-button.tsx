@@ -19,7 +19,7 @@ export function SubmitButton({ children, pendingText, className = "", ...props }
       {...props}
       disabled={pending || props.disabled}
       aria-disabled={pending || props.disabled}
-      className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-base font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+      className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-4 text-base font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
     >
       {pending && pendingText && isThisButton ? pendingText : children}
     </button>
