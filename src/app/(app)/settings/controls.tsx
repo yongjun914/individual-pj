@@ -270,6 +270,7 @@ export function MemberAccessRow({
   position,
   revoked,
   isMe,
+  hidden = false,
 }: {
   membershipId: string;
   name: string;
@@ -277,13 +278,23 @@ export function MemberAccessRow({
   position: string;
   revoked: string[];
   isMe: boolean;
+  /** 검색에서 빠졌을 때 숨긴다 (입력하던 내용은 그대로 둔다) */
+  hidden?: boolean;
 }) {
   const { isPending, error, run } = useAction();
   const [nextRole, setNextRole] = useState<MemberRole>(role);
   const [nextPosition, setNextPosition] = useState(position);
   const [nextRevoked, setNextRevoked] = useState<Set<string>>(new Set(revoked));
   const [saved, setSaved] = useState(false);
+  // 기능 권한 체크 칸은 '권한 수정'을 눌렀을 때만 펼친다
+  const [editingPermissions, setEditingPermissions] = useState(false);
   const admin = isAdminRole(nextRole);
+  const revokedLabels = PERMISSIONS.filter((p) => nextRevoked.has(p)).map((p) => PERMISSION_LABELS[p].label);
+  const permissionSummary = admin
+    ? "모든 기능 (학회장·부학회장·총무는 항상)"
+    : revokedLabels.length === 0
+      ? "모든 기능"
+      : `${revokedLabels.join(", ")} 해제`;
   const changed =
     nextRole !== role ||
     nextPosition.trim() !== position ||
@@ -300,7 +311,7 @@ export function MemberAccessRow({
   }
 
   return (
-    <li className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <li className={`space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${hidden ? "hidden" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-lg font-semibold">
           {name}
@@ -356,10 +367,26 @@ export function MemberAccessRow({
           />
         </label>
       </div>
-      <fieldset className="space-y-2">
-        <legend className="text-sm text-zinc-500">
-          기능 권한 {admin ? "(학회장·부학회장·총무는 항상 모든 기능을 써요)" : "(체크를 끄면 그 기능을 못 써요)"}
-        </legend>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p className="min-w-0">
+          <span className="text-zinc-500">기능 권한: </span>
+          <span className={revokedLabels.length > 0 && !admin ? "font-medium text-amber-700 dark:text-amber-300" : ""}>
+            {permissionSummary}
+          </span>
+        </p>
+        {!admin && (
+          <button
+            type="button"
+            onClick={() => setEditingPermissions((v) => !v)}
+            aria-expanded={editingPermissions}
+            className={`${linkButton} text-blue-600`}
+          >
+            {editingPermissions ? "접기" : "권한 수정"}
+          </button>
+        )}
+      </div>
+      <fieldset className={`space-y-2 ${editingPermissions && !admin ? "" : "hidden"}`}>
+        <legend className="text-sm text-zinc-500">기능 권한 (체크를 끄면 그 기능을 못 써요)</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {PERMISSIONS.map((p) => (
             <label

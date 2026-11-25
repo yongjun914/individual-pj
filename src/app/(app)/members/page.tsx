@@ -11,8 +11,9 @@ import { isManagerRole, type MemberRole } from "@/lib/roles";
 import { createClient } from "@/lib/supabase/server";
 import { termLabel, termOrgLabel } from "@/lib/terms";
 
-import { InviteCreator, InviteRow, MemberAccessRow, StartTermForm } from "../settings/controls";
+import { InviteCreator, InviteRow, StartTermForm } from "../settings/controls";
 
+import { MemberList } from "./member-list";
 import { JoinRequestRow, RoleRequestRow, type JoinRequestItem, type PendingRequest } from "./role-requests";
 
 export const metadata: Metadata = { title: "학생회원 관리" };
@@ -157,11 +158,7 @@ async function MembersContent({ searchParams }: { searchParams: PageProps<"/memb
             </Card>
           )}
           <Card title={`멤버 (${items.length}명)`} description={termOrgLabel(term.name, org.name)}>
-            <ul className="space-y-3">
-              {items.map((m) => (
-                <MemberAccessRow key={m.membershipId} {...m} />
-              ))}
-            </ul>
+            <MemberList items={items} />
           </Card>
         </div>
 
