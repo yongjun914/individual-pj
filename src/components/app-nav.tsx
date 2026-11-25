@@ -69,7 +69,7 @@ export function TopBar({ user }: { user: NavUser | null }) {
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
           <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
-          <span className="text-lg">학생회 회계</span>
+          <span className="text-lg">학생회 업무포털</span>
         </Link>
 
         <nav aria-label="주 메뉴" className="hidden flex-1 items-center gap-0.5 lg:flex">
@@ -249,7 +249,7 @@ export function TopBarPlaceholder() {
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
           <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
-          <span className="text-lg">학생회 회계</span>
+          <span className="text-lg">학생회 업무포털</span>
         </Link>
       </div>
     </header>

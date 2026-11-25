@@ -17,13 +17,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "학생회 회계",
-    template: "%s | 학생회 회계",
+    default: "학생회 업무포털",
+    template: "%s | 학생회 업무포털",
   },
   description: "학생회 영수증 관리와 감사 자료 자동 생성",
   appleWebApp: {
     capable: true,
-    title: "학생회 회계",
+    title: "학생회 업무포털",
     statusBarStyle: "default",
   },
 };

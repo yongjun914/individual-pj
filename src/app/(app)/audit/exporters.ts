@@ -374,7 +374,7 @@ export async function buildEvidencePdf(
   const { PDFDocument } = await import("pdf-lib");
   const pdf = await PDFDocument.create();
   pdf.setTitle(`${meta.orgName} ${meta.termName} 지출 증빙`);
-  pdf.setCreator("학생회 회계");
+  pdf.setCreator("학생회 업무포털");
 
   // 페이지 계획: 영수증은 장마다 1쪽, 사유서·없음은 1쪽
   const pagesOf = (r: AuditRow) => Math.max(1, r.receipts.length);

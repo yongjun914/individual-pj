@@ -18,7 +18,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-8 px-6 py-16">
       <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold">학생회 회계</h1>
+        <h1 className="text-2xl font-semibold">학생회 업무포털</h1>
         <p className="text-zinc-600 dark:text-zinc-400">
           영수증 정리부터 감사 자료까지 한 곳에서
         </p>

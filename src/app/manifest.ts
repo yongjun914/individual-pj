@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "학생회 회계",
-    short_name: "학생회 회계",
+    name: "학생회 업무포털",
+    short_name: "학생회 업무포털",
     description: "학생회 영수증 관리와 감사 자료 자동 생성",
     start_url: "/",
     display: "standalone",
