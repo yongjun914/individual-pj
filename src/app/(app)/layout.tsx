@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { BottomTabBar, TopBar, TopBarPlaceholder, type NavUser } from "@/components/app-nav";
@@ -5,7 +6,14 @@ import { getCurrentUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { canAny } from "@/lib/permissions";
 import { isManagerRole, roleLabel } from "@/lib/roles";
+import { schoolIcons } from "@/lib/school-brand";
+import { getMySchoolBrand } from "@/lib/school-brand-server";
 import { createClient } from "@/lib/supabase/server";
+
+/** 사이트 아이콘을 내 학교에 맞춘다 (상명대: 학교 로고, 그 밖: 학사모) */
+export async function generateMetadata(): Promise<Metadata> {
+  return { icons: schoolIcons(await getMySchoolBrand()) };
+}
 
 /** 로그인 뒤 화면 공통 틀: 상단 바 + 본문 + (휴대폰) 하단 탭 바 */
 export default function AppLayout({ children }: LayoutProps<"/">) {

@@ -1,6 +1,11 @@
 import type { MetadataRoute } from "next";
 
-export default function manifest(): MetadataRoute.Manifest {
+import { schoolManifestIcons } from "@/lib/school-brand";
+import { getMySchoolBrand } from "@/lib/school-brand-server";
+
+/** 앱 설치 정보. 아이콘은 로그인한 사용자의 학교에 맞춘다(상명대: 학교 로고, 그 밖: 학사모). */
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const brand = await getMySchoolBrand();
   return {
     name: "학생회 업무포털",
     short_name: "학생회 업무포털",
@@ -10,11 +15,6 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#ffffff",
     theme_color: "#084d98",
     lang: "ko",
-    // 상명대 로고 (public/logos/sangmyung.jpg로 만든 정사각형 아이콘)
-    icons: [
-      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-      { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-    ],
+    icons: schoolManifestIcons(brand),
   };
 }

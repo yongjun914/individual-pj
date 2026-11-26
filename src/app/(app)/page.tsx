@@ -5,13 +5,8 @@ import { Suspense } from "react";
 import { requireUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { roleLabel } from "@/lib/roles";
+import { schoolLogo } from "@/lib/school-brand";
 import { createClient } from "@/lib/supabase/server";
-
-/** 학교별 로고 (없으면 글자만 보여 준다) */
-function schoolLogo(schoolName: string) {
-  if (schoolName.includes("상명")) return { src: "/logos/sangmyung.jpg", alt: "상명대학교 로고", width: 1488, height: 2000 };
-  return null;
-}
 
 /** 홈: 학교 로고와 학생회 이름, 내 이름·직책만 깔끔하게 보여 준다. 기능은 상단 메뉴에서. */
 export default function Home() {
@@ -43,7 +38,7 @@ async function HomeContent() {
 
   return (
     <div className="flex flex-col items-center gap-8 text-center">
-      {logo && (
+      {logo ? (
         <Image
           src={logo.src}
           alt={logo.alt}
@@ -52,9 +47,14 @@ async function HomeContent() {
           priority
           className="h-auto w-28 rounded-xl shadow-[0_18px_40px_-20px_rgb(11_77_151/0.6)] md:w-36"
         />
+      ) : (
+        // 로고가 없는 학교는 로고 자리에 학교 이름을 크게
+        <p className="text-4xl font-bold tracking-tight text-[#084d98] md:text-6xl dark:text-blue-300">
+          {org.school_name}
+        </p>
       )}
       <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
-        {org.school_name} {org.name}
+        {logo ? `${org.school_name} ${org.name}` : org.name}
       </h1>
       <div className="space-y-1">
         <p className="text-xl font-semibold md:text-2xl">{profile?.display_name || "이름 없음"}</p>
