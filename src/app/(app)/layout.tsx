@@ -6,7 +6,7 @@ import { getCurrentUserId } from "@/lib/auth";
 import { getActiveMemberships } from "@/lib/memberships";
 import { canAny } from "@/lib/permissions";
 import { isManagerRole, roleLabel } from "@/lib/roles";
-import { schoolIcons } from "@/lib/school-brand";
+import { schoolBrand, schoolIcons } from "@/lib/school-brand";
 import { getMySchoolBrand } from "@/lib/school-brand-server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -71,6 +71,7 @@ async function TopBarWithUser() {
     pendingRequests,
     canAudit: canAny(memberships, "audit"),
     canSettings: canAny(memberships, "settings"),
+    brand: schoolBrand(first?.terms.organizations.school_name),
   };
   return <TopBar user={user} />;
 }

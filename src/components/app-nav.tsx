@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { signOut } from "@/app/auth/actions";
+import type { SchoolBrand } from "@/lib/school-brand";
 
 export type NavUser = {
   name: string;
@@ -17,6 +18,8 @@ export type NavUser = {
   pendingRequests: number;
   canAudit: boolean;
   canSettings: boolean;
+  /** 상단 바 로고: 상명대는 학교 로고, 그 밖은 학사모 */
+  brand: SchoolBrand;
 };
 
 type NavItem = { href: string; label: string; need?: "audit" | "settings" | "admin" };
@@ -68,7 +71,7 @@ export function TopBar({ user }: { user: NavUser | null }) {
     <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
-          <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
+          <Image src={`/icons/${user?.brand ?? "default"}/icon-192.png`} alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
           <span className="text-lg">학생회 업무포털</span>
         </Link>
 
@@ -248,7 +251,8 @@ export function TopBarPlaceholder() {
     <header className="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 md:px-8 xl:gap-6">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-bold">
-          <Image src="/icons/icon-192.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg" />
+          {/* 학교를 모르는 동안은 빈 자리로 둔다 (다른 학교 아이콘이 잠깐 보이지 않게) */}
+          <span aria-hidden="true" className="h-9 w-9 rounded-lg bg-zinc-100 dark:bg-zinc-800" />
           <span className="text-lg">학생회 업무포털</span>
         </Link>
       </div>
