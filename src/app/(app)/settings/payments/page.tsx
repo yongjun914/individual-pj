@@ -218,6 +218,9 @@ function SetupGuide() {
   return (
     <section className="space-y-3 rounded-2xl bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
       <h2 className="font-medium">폰 설정 방법</h2>
+      <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        카드사마다 메시지(SMS)로 결제 내역을 받을 경우 약 300원 정도의 요금이 발생할 수 있습니다.
+      </p>
       <div className="space-y-1">
         <h3 className="font-medium">아이폰 (단축어 앱)</h3>
         <ol className="list-decimal space-y-1 pl-5 text-zinc-700 dark:text-zinc-300">
