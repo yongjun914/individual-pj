@@ -4,9 +4,9 @@
 
 ## 소개 영상 (약 3분)
 
-[![학생회 업무포털 소개 영상 — 눌러서 보기](media/intro-thumbnail.jpg)](media/intro.mp4)
+[![학생회 업무포털 소개 영상 — 눌러서 보기](media/intro-thumbnail.jpg)](https://individual-pj.vercel.app/intro.mp4)
 
-▶ [소개 영상 보기 (MP4)](media/intro.mp4) — 사용 방법과 주요 기능을 한국어 음성·자막으로 설명해요.
+▶ [소개 영상 보기 (MP4)](https://individual-pj.vercel.app/intro.mp4) — 사용 방법과 주요 기능을 한국어 음성·자막으로 설명해요.
 
 12월부터 과 학생회를 부학회장으로 임명받아 활동할 예정입니다. 
 
@@ -121,6 +121,6 @@ supabase/
   tests/            RLS 권한 검증 스크립트
 tests/unit/         단위 테스트
 public/             아이콘 등 정적 파일
-media/              README용 소개 영상과 미리보기 그림
+media/              README용 소개 영상 미리보기 그림 (영상은 public/intro.mp4)
 docs/               기획 문서·양식 샘플 (git 미포함)
 ```
